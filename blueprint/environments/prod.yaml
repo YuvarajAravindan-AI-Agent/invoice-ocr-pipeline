@@ -4,19 +4,19 @@ catalyst:
   region: in
 
 aws:
-  region: <aws-region>
+  region: ap-south-1
   instance_size: medium
 
 azure:
-  region: <azure-region>
+  region: centralindia
   sku: S1
 
 gcp:
-  region: <gcp-region>
+  region: asia-south1
   machine_type: e2-medium
 
 alibaba:
-  region: <alibaba-region>
+  region: ap-south-1
   instance_type: ecs.c6.large
 
 compute:

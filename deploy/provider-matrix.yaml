@@ -5,9 +5,7 @@
 # onboarding a new cloud is: add an entry, implement iac/opentofu/<name>/,
 # flip active: true. Nothing in the workflow YAML needs to change.
 #
-# TEMPLATE — replace every <SERVICE_NAME> / <REGION> / <...> placeholder
-# for the new service before first use, and delete any provider block you
-# don't need yet (leave active: false ones you plan to add later).
+# Instantiated from service-template for invoice-ocr-pipeline.
 #
 # mechanism:
 #   opentofu     -> driven by scripts/adapters/opentofu.sh (tofu plan/apply)
@@ -37,13 +35,13 @@ providers:
     mechanism: opentofu
     tier: adapter
     workdir: iac/opentofu/aws
-    region: <aws-region>
+    region: ap-south-1
     backend:
       type: s3
-      bucket: <service-name>-tfstate-aws
+      bucket: invoice-ocr-pipeline-tfstate-aws
       key: prod/aws.tfstate
-      region: <aws-region>
-      dynamodb_table: <service-name>-tf-locks-aws
+      region: ap-south-1
+      dynamodb_table: invoice-ocr-pipeline-tf-locks-aws
     approval_environment: aws-prod
 
   - name: azure
@@ -51,11 +49,11 @@ providers:
     mechanism: opentofu
     tier: adapter
     workdir: iac/opentofu/azure
-    region: <azure-region>
+    region: centralindia
     backend:
       type: azurerm
-      resource_group: <service-name>-tfstate-rg
-      storage_account: <servicenametfstate>
+      resource_group: invoice-ocr-pipeline-tfstate-rg
+      storage_account: invoiceocrtfstate
       container: tfstate
       key: azure.tfstate
     approval_environment: azure-prod
@@ -65,10 +63,10 @@ providers:
     mechanism: opentofu
     tier: adapter
     workdir: iac/opentofu/gcp
-    region: <gcp-region>
+    region: asia-south1
     backend:
       type: gcs
-      bucket: <service-name>-tfstate-gcp
+      bucket: invoice-ocr-pipeline-tfstate-gcp
       prefix: prod
     approval_environment: gcp-prod
 
@@ -77,12 +75,12 @@ providers:
     mechanism: opentofu
     tier: adapter
     workdir: iac/opentofu/alibaba
-    region: <alibaba-region>
+    region: ap-south-1
     backend:
       type: oss
-      bucket: <service-name>-tfstate-alibaba
+      bucket: invoice-ocr-pipeline-tfstate-alibaba
       prefix: prod
-      region: <alibaba-region>
+      region: ap-south-1
     approval_environment: alibaba-prod
 
   # Template for adding a sixth provider later — copy this block, fill it

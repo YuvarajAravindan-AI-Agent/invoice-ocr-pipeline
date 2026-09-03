@@ -1,4 +1,4 @@
-# Neutral infrastructure contract for <service-name>.
+# Neutral infrastructure contract for invoice-ocr-pipeline.
 #
 # Describes REQUIREMENTS and CAPABILITIES, not resources. It is never
 # applied directly to a cloud API — each provider adapter under iac/
@@ -15,22 +15,47 @@
 #     for region/SKU/limits instead.
 
 application:
-  name: <service-name>
+  name: invoice-ocr-pipeline
   version: "0.1.0"
 
 compute:
+  # API service: accepts invoice uploads, exposes extraction results.
   capability: linux_http_service
-  cpu: 1
-  memory_gib: 2
+  cpu: 2
+  memory_gib: 4
   disk_gib: 20
   replicas: 1
+
+  # OCR/extraction worker: consumes the queue below, runs the inference
+  # step. Sized higher than the API — OCR/ML inference is the expensive
+  # part of this service.
+  worker:
+    capability: linux_http_service # containerized worker, no inbound HTTP
+    cpu: 4
+    memory_gib: 8
+    disk_gib: 20
+    replicas: 1
 
 network:
   ingress: https
   public_ssh: false
 
+storage:
+  object_storage:
+    # Raw invoice uploads (PDF/image) land here before OCR; keep keys
+    # provider-independent per docs/architecture.md.
+    retention_days: 90
+
+queue:
+  # Decouples upload from OCR/extraction so the worker can scale
+  # independently of the API and retries don't block ingestion.
+  name: invoice-extraction-jobs
+  dead_letter: true
+
 data:
   relational_database:
+    # Extracted structured invoice data (vendor, line items, totals,
+    # confidence scores) lands here for downstream consumption.
     engine: postgresql
     major_version: "16"
     storage_gib: 20
