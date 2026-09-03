@@ -26,7 +26,8 @@ providers:
     mechanism: catalyst-cli
     tier: primary
     workdir: iac/vendor-native/catalyst
-    region: in
+    region: in # passed as catalyst-cli's --dc flag
+    deploy_targets: appsail:api,appsail:worker # passed as `catalyst deploy --only`
     backend: null
     approval_environment: catalyst-prod
 

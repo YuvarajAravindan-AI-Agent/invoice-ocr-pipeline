@@ -10,6 +10,7 @@ crash.*.log
 
 # Catalyst
 .catalyst/
+.catalystrc
 catalyst-config.local.json
 
 # General

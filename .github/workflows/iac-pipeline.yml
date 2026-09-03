@@ -123,10 +123,6 @@ jobs:
           echo "ALICLOUD_ACCESS_KEY=${{ secrets.ALIBABA_ACCESS_KEY }}" >> "$GITHUB_ENV"
           echo "ALICLOUD_SECRET_KEY=${{ secrets.ALIBABA_SECRET_KEY }}" >> "$GITHUB_ENV"
 
-      - name: Catalyst auth
-        if: matrix.name == 'catalyst'
-        run: catalyst config:set --token "${{ secrets.CATALYST_CI_TOKEN }}"
-
       - name: Generate backend config
         if: matrix.mechanism == 'opentofu'
         run: |
@@ -135,6 +131,11 @@ jobs:
           ./scripts/generate-backend-hcl.sh /tmp/backend-${{ matrix.name }}.json /tmp/backend-${{ matrix.name }}.hcl
 
       - name: Plan (${{ matrix.name }})
+        env:
+          CATALYST_CI_TOKEN: ${{ secrets.CATALYST_CI_TOKEN }}
+          CATALYST_PROJECT: ${{ secrets.CATALYST_PROJECT_ID }}
+          CATALYST_DC: ${{ matrix.region }}
+          CATALYST_DEPLOY_TARGETS: ${{ matrix.deploy_targets }}
         run: |
           if [ "${{ matrix.mechanism }}" = "opentofu" ]; then
             ./scripts/adapters/opentofu.sh plan "${{ matrix.workdir }}" /tmp/backend-${{ matrix.name }}.hcl
@@ -201,10 +202,6 @@ jobs:
           echo "ALICLOUD_ACCESS_KEY=${{ secrets.ALIBABA_ACCESS_KEY }}" >> "$GITHUB_ENV"
           echo "ALICLOUD_SECRET_KEY=${{ secrets.ALIBABA_SECRET_KEY }}" >> "$GITHUB_ENV"
 
-      - name: Catalyst auth
-        if: matrix.name == 'catalyst'
-        run: catalyst config:set --token "${{ secrets.CATALYST_CI_TOKEN }}"
-
       - name: Generate backend config
         if: matrix.mechanism == 'opentofu'
         run: |
@@ -220,6 +217,11 @@ jobs:
           path: ${{ matrix.workdir }}
 
       - name: Apply (${{ matrix.name }})
+        env:
+          CATALYST_CI_TOKEN: ${{ secrets.CATALYST_CI_TOKEN }}
+          CATALYST_PROJECT: ${{ secrets.CATALYST_PROJECT_ID }}
+          CATALYST_DC: ${{ matrix.region }}
+          CATALYST_DEPLOY_TARGETS: ${{ matrix.deploy_targets }}
         run: |
           if [ "${{ matrix.mechanism }}" = "opentofu" ]; then
             ./scripts/adapters/opentofu.sh apply "${{ matrix.workdir }}" /tmp/backend-${{ matrix.name }}.hcl
