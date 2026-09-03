@@ -1,0 +1,28 @@
+# Environment overlay — provider-specific region/SKU/limits that don't
+# belong in the neutral blueprint/platform.yaml. Keep one file per
+# environment per provider, or split further if a provider needs more
+# than region/scale to differ between environments.
+
+environment: dev
+
+catalyst:
+  region: in
+
+aws:
+  region: <aws-region>
+  instance_size: small
+
+azure:
+  region: <azure-region>
+  sku: B1
+
+gcp:
+  region: <gcp-region>
+  machine_type: e2-small
+
+alibaba:
+  region: <alibaba-region>
+  instance_type: ecs.t6-c1m1.large
+
+compute:
+  replicas: 1

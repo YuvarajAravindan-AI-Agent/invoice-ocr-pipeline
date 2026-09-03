@@ -1,0 +1,242 @@
+name: IaC pipeline
+
+# Orchestrates every provider adapter listed as active in
+# deploy/provider-matrix.yaml through one uniform plan -> approve -> apply
+# flow, regardless of whether the adapter is OpenTofu or Catalyst CLI.
+#
+# Add a cloud: implement iac/opentofu/<name>/, add an entry to
+# provider-matrix.yaml with active: true, create a matching GitHub
+# Environment named <name>-prod with required reviewers. No changes
+# needed here.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "iac/**"
+      - "blueprint/**"
+      - "deploy/**"
+      - "app/**"
+  push:
+    branches: [main]
+    paths:
+      - "iac/**"
+      - "blueprint/**"
+      - "deploy/**"
+      - "app/**"
+
+permissions:
+  id-token: write # required for OIDC federation to AWS/Azure/GCP
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Common quality gates — run once, independent of provider.
+  # ---------------------------------------------------------------------
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Format / unit tests
+        run: |
+          # app-level tests — replace with the real test runner
+          ./tests/contract/run.sh
+
+      - name: Contract validation
+        run: |
+          # validates blueprint/*.yaml against the neutral contract schema (§4)
+          ./tests/contract/validate-blueprint.sh blueprint/platform.yaml
+
+      - name: Security and dependency scan
+        run: |
+          # e.g. trivy fs / grype / osv-scanner — wire up the real scanner
+          echo "run dependency + secret scan here"
+
+  # ---------------------------------------------------------------------
+  # Build the job matrix from provider-matrix.yaml (active providers only)
+  # ---------------------------------------------------------------------
+  prepare-matrix:
+    needs: quality-gates
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build matrix from provider-matrix.yaml
+        id: build
+        run: |
+          MATRIX=$(yq -o=json '.providers | map(select(.active == true))' deploy/provider-matrix.yaml | jq -c '{include: .}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Active providers:"
+          echo "$MATRIX" | jq -r '.include[].name'
+
+  # ---------------------------------------------------------------------
+  # Plan — every active provider, every PR. No credentials with write
+  # access are needed for plan; read-only OIDC roles are sufficient.
+  # ---------------------------------------------------------------------
+  plan:
+    needs: prepare-matrix
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OpenTofu
+        if: matrix.mechanism == 'opentofu'
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Set up Catalyst CLI
+        if: matrix.mechanism == 'catalyst-cli'
+        run: npm install -g zcatalyst-cli
+
+      # --- provider credentials (OIDC / federated, no long-lived secrets) ---
+      - name: Configure AWS credentials
+        if: matrix.name == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ matrix.region }}
+
+      - name: Azure login
+        if: matrix.name == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Google Cloud auth
+        if: matrix.name == 'gcp'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_PLAN_SERVICE_ACCOUNT }}
+
+      - name: Alibaba Cloud credentials
+        if: matrix.name == 'alibaba'
+        run: |
+          echo "ALICLOUD_ACCESS_KEY=${{ secrets.ALIBABA_ACCESS_KEY }}" >> "$GITHUB_ENV"
+          echo "ALICLOUD_SECRET_KEY=${{ secrets.ALIBABA_SECRET_KEY }}" >> "$GITHUB_ENV"
+
+      - name: Catalyst auth
+        if: matrix.name == 'catalyst'
+        run: catalyst config:set --token "${{ secrets.CATALYST_CI_TOKEN }}"
+
+      - name: Generate backend config
+        if: matrix.mechanism == 'opentofu'
+        run: |
+          yq -o=json ".providers[] | select(.name == \"${{ matrix.name }}\") | .backend" \
+            deploy/provider-matrix.yaml > /tmp/backend-${{ matrix.name }}.json
+          ./scripts/generate-backend-hcl.sh /tmp/backend-${{ matrix.name }}.json /tmp/backend-${{ matrix.name }}.hcl
+
+      - name: Plan (${{ matrix.name }})
+        run: |
+          if [ "${{ matrix.mechanism }}" = "opentofu" ]; then
+            ./scripts/adapters/opentofu.sh plan "${{ matrix.workdir }}" /tmp/backend-${{ matrix.name }}.hcl
+          else
+            ./scripts/adapters/catalyst.sh plan "${{ matrix.workdir }}"
+          fi
+
+      - name: Upload plan artifact
+        if: matrix.mechanism == 'opentofu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.name }}
+          path: ${{ matrix.workdir }}/tfplan
+          retention-days: 14
+
+  # ---------------------------------------------------------------------
+  # Apply — only on merge to main. Each provider gates on its own GitHub
+  # Environment (required reviewers = the human approval step from §7).
+  # ---------------------------------------------------------------------
+  apply:
+    needs: prepare-matrix
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    environment: ${{ matrix.approval_environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OpenTofu
+        if: matrix.mechanism == 'opentofu'
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Set up Catalyst CLI
+        if: matrix.mechanism == 'catalyst-cli'
+        run: npm install -g zcatalyst-cli
+
+      - name: Configure AWS credentials
+        if: matrix.name == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ matrix.region }}
+
+      - name: Azure login
+        if: matrix.name == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Google Cloud auth
+        if: matrix.name == 'gcp'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_APPLY_SERVICE_ACCOUNT }}
+
+      - name: Alibaba Cloud credentials
+        if: matrix.name == 'alibaba'
+        run: |
+          echo "ALICLOUD_ACCESS_KEY=${{ secrets.ALIBABA_ACCESS_KEY }}" >> "$GITHUB_ENV"
+          echo "ALICLOUD_SECRET_KEY=${{ secrets.ALIBABA_SECRET_KEY }}" >> "$GITHUB_ENV"
+
+      - name: Catalyst auth
+        if: matrix.name == 'catalyst'
+        run: catalyst config:set --token "${{ secrets.CATALYST_CI_TOKEN }}"
+
+      - name: Generate backend config
+        if: matrix.mechanism == 'opentofu'
+        run: |
+          yq -o=json ".providers[] | select(.name == \"${{ matrix.name }}\") | .backend" \
+            deploy/provider-matrix.yaml > /tmp/backend-${{ matrix.name }}.json
+          ./scripts/generate-backend-hcl.sh /tmp/backend-${{ matrix.name }}.json /tmp/backend-${{ matrix.name }}.hcl
+
+      - name: Download plan artifact
+        if: matrix.mechanism == 'opentofu'
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ matrix.name }}
+          path: ${{ matrix.workdir }}
+
+      - name: Apply (${{ matrix.name }})
+        run: |
+          if [ "${{ matrix.mechanism }}" = "opentofu" ]; then
+            ./scripts/adapters/opentofu.sh apply "${{ matrix.workdir }}" /tmp/backend-${{ matrix.name }}.hcl
+          else
+            ./scripts/adapters/catalyst.sh apply "${{ matrix.workdir }}"
+          fi
+
+      - name: Smoke tests
+        run: ./tests/smoke/run.sh --provider "${{ matrix.name }}"
+
+      - name: Publish release evidence
+        run: |
+          mkdir -p evidence
+          echo "{\"provider\":\"${{ matrix.name }}\",\"sha\":\"${{ github.sha }}\",\"run\":\"${{ github.run_id }}\"}" \
+            > evidence/${{ matrix.name }}-${{ github.sha }}.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ matrix.name }}
+          path: evidence/

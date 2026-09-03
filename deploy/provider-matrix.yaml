@@ -1,0 +1,101 @@
+# Neutral provider manifest.
+#
+# This is the single source of truth for which cloud adapters are active.
+# The GitHub Actions pipeline reads this file to build its job matrix —
+# onboarding a new cloud is: add an entry, implement iac/opentofu/<name>/,
+# flip active: true. Nothing in the workflow YAML needs to change.
+#
+# TEMPLATE — replace every <SERVICE_NAME> / <REGION> / <...> placeholder
+# for the new service before first use, and delete any provider block you
+# don't need yet (leave active: false ones you plan to add later).
+#
+# mechanism:
+#   opentofu     -> driven by scripts/adapters/opentofu.sh (tofu plan/apply)
+#   catalyst-cli -> driven by scripts/adapters/catalyst.sh (no OpenTofu
+#                   provider exists for Catalyst; this wrapper exposes the
+#                   same plan/apply/destroy interface so the pipeline can
+#                   treat every provider uniformly)
+#
+# tier:
+#   primary -> the day-one deployment target (Catalyst)
+#   adapter -> portability targets, validated per §10 of the architecture doc
+
+version: 1
+
+providers:
+  - name: catalyst
+    active: true
+    mechanism: catalyst-cli
+    tier: primary
+    workdir: iac/vendor-native/catalyst
+    region: in
+    backend: null
+    approval_environment: catalyst-prod
+
+  - name: aws
+    active: false # flip to true once iac/opentofu/aws is implemented
+    mechanism: opentofu
+    tier: adapter
+    workdir: iac/opentofu/aws
+    region: <aws-region>
+    backend:
+      type: s3
+      bucket: <service-name>-tfstate-aws
+      key: prod/aws.tfstate
+      region: <aws-region>
+      dynamodb_table: <service-name>-tf-locks-aws
+    approval_environment: aws-prod
+
+  - name: azure
+    active: false # flip to true once iac/opentofu/azure is implemented
+    mechanism: opentofu
+    tier: adapter
+    workdir: iac/opentofu/azure
+    region: <azure-region>
+    backend:
+      type: azurerm
+      resource_group: <service-name>-tfstate-rg
+      storage_account: <servicenametfstate>
+      container: tfstate
+      key: azure.tfstate
+    approval_environment: azure-prod
+
+  - name: gcp
+    active: false # flip to true once iac/opentofu/gcp is implemented
+    mechanism: opentofu
+    tier: adapter
+    workdir: iac/opentofu/gcp
+    region: <gcp-region>
+    backend:
+      type: gcs
+      bucket: <service-name>-tfstate-gcp
+      prefix: prod
+    approval_environment: gcp-prod
+
+  - name: alibaba
+    active: false # flip to true once iac/opentofu/alibaba is implemented
+    mechanism: opentofu
+    tier: adapter
+    workdir: iac/opentofu/alibaba
+    region: <alibaba-region>
+    backend:
+      type: oss
+      bucket: <service-name>-tfstate-alibaba
+      prefix: prod
+      region: <alibaba-region>
+    approval_environment: alibaba-prod
+
+  # Template for adding a sixth provider later — copy this block, fill it
+  # in, implement iac/opentofu/<name>/ with the common variable contract
+  # from platform-opentofu-modules (pinned via git ref) or a local
+  # iac/opentofu/modules/common override, and set active: true.
+  # - name: <new-cloud>
+  #   active: false
+  #   mechanism: opentofu
+  #   tier: adapter
+  #   workdir: iac/opentofu/<new-cloud>
+  #   region: <region>
+  #   backend:
+  #     type: <backend-type>
+  #     ...
+  #   approval_environment: <new-cloud>-prod

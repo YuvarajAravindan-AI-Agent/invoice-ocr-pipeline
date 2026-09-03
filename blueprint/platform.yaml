@@ -1,0 +1,43 @@
+# Neutral infrastructure contract for <service-name>.
+#
+# Describes REQUIREMENTS and CAPABILITIES, not resources. It is never
+# applied directly to a cloud API — each provider adapter under iac/
+# reads this (or a generated var-file derived from it) and supplies its
+# own resource types.
+#
+# Rules:
+#   - Use capability names: linux_http_service, relational_database,
+#     object_storage, secret_store, queue, scheduler.
+#   - Use portable units: vCPU, GiB, replica count, HTTPS, engine
+#     version, retention days.
+#   - Never put credentials, project IDs, account IDs, or
+#     environment-specific state here — use environments/*.yaml overlays
+#     for region/SKU/limits instead.
+
+application:
+  name: <service-name>
+  version: "0.1.0"
+
+compute:
+  capability: linux_http_service
+  cpu: 1
+  memory_gib: 2
+  disk_gib: 20
+  replicas: 1
+
+network:
+  ingress: https
+  public_ssh: false
+
+data:
+  relational_database:
+    engine: postgresql
+    major_version: "16"
+    storage_gib: 20
+
+operations:
+  logs: structured_json
+  telemetry: opentelemetry
+  backups: daily
+  deployment: rolling
+  pipeline: github_actions

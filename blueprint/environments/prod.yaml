@@ -1,0 +1,23 @@
+environment: prod
+
+catalyst:
+  region: in
+
+aws:
+  region: <aws-region>
+  instance_size: medium
+
+azure:
+  region: <azure-region>
+  sku: S1
+
+gcp:
+  region: <gcp-region>
+  machine_type: e2-medium
+
+alibaba:
+  region: <alibaba-region>
+  instance_type: ecs.c6.large
+
+compute:
+  replicas: 2

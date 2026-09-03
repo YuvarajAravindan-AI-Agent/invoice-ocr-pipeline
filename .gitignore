@@ -1,0 +1,19 @@
+# OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+crash.log
+crash.*.log
+*.tfvars
+!example.tfvars
+
+# Catalyst
+.catalyst/
+catalyst-config.local.json
+
+# General
+.env
+.env.*
+*.log
+.DS_Store
