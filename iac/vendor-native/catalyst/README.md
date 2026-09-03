@@ -2,8 +2,8 @@
 
 Copy 1 — the Catalyst-specific implementation, driven by `catalyst-cli`
 via `../../../scripts/adapters/catalyst.sh`. Grounded against the
-current Catalyst CLI docs (docs.catalyst.zoho.com, checked 2026-09-03)
-— see sources at the bottom.
+current Catalyst CLI/SDK docs (docs.catalyst.zoho.com, checked
+2026-09-03) — see sources at the bottom.
 
 ## What this maps to, per blueprint/platform.yaml
 
@@ -11,11 +11,12 @@ current Catalyst CLI docs (docs.catalyst.zoho.com, checked 2026-09-03)
 |---|---|---|
 | `compute` (API, 2 vCPU/4 GiB, HTTPS ingress) | AppSail, custom Docker runtime | AppSail supports configurable resources and a custom OCI image; Functions are sized for lighter, shorter-lived workloads |
 | `compute.worker` (OCR worker, 4 vCPU/8 GiB, no ingress) | AppSail, custom Docker runtime | Same reasoning — this is the expensive part of the service |
-| `storage.object_storage` | Stratus | Referenced from application code via the Catalyst SDK, not IaC'd as a file here |
-| `data.relational_database` | External managed PostgreSQL (not Catalyst Data Store) | Blueprint asks for PostgreSQL specifically for portability; Catalyst Data Store is NoSQL and would be Tier 3 |
-| `queue` (`invoice-extraction-jobs`) | **Not decided** | See `../../../docs/provider-matrix.md` — Catalyst has no confirmed native queue primitive equivalent to SQS; needs a decision before this can be implemented |
+| `storage.object_storage` | Stratus | `app/adapters/catalyst/object_store.py` |
+| `data.relational_database` | External managed PostgreSQL (not Catalyst Data Store) | Blueprint asks for PostgreSQL specifically for portability; Catalyst Data Store is NoSQL and would be Tier 3. Implemented once, shared across providers — `app/adapters/postgres/` |
+| `queue` (`invoice-extraction-jobs`) | Job Scheduling | **Decided** — see `../../../docs/provider-matrix.md`. Push delivery (Catalyst POSTs to the worker), not pull — changes the worker's entrypoint shape, see below |
+| OCR/extraction | Zia OCR + regex heuristics | **Decided** — see `../../../docs/provider-matrix.md`. Raw text only, no structured fields; deliberately low-accuracy MVP |
 
-## Directory layout (target state)
+## Directory layout (current state)
 
 ```
 iac/vendor-native/catalyst/
@@ -24,20 +25,28 @@ iac/vendor-native/catalyst/
 ├── appsail/
 │   ├── api/
 │   │   ├── app-config.json # NOT hand-authored — see below
-│   │   ├── Dockerfile
+│   │   ├── Dockerfile      # builds from REPO ROOT context — see the Dockerfile itself
 │   │   ├── requirements.txt
-│   │   └── main.py
+│   │   └── main.py         # real: submit/status endpoints wired to the use cases
 │   └── worker/
 │       ├── app-config.json
-│       ├── Dockerfile
+│       ├── Dockerfile      # builds from REPO ROOT context
 │       ├── requirements.txt
-│       └── worker.py
+│       └── main.py         # real: /process endpoint, the actual "receive" point for jobs
 ```
 
-`Dockerfile`/`requirements.txt`/`main.py`/`worker.py` are scaffolded in
-this commit as minimal placeholders (health-check only, no real
-extraction logic yet). `catalyst.json` and each `app-config.json` are
-**not** — see below.
+`main.py` in both services is wired to the real use cases in
+`app/application/use_cases/` via the adapters in `app/adapters/catalyst/`
+and `app/adapters/postgres/`. `catalyst.json` and each `app-config.json`
+are **not** committed yet — see below.
+
+Both Dockerfiles must be built with the **repo root** as context, not
+their own directory, since they need `app/`:
+
+```
+docker build -f iac/vendor-native/catalyst/appsail/api/Dockerfile -t invoice-ocr-pipeline-api:latest .
+docker build -f iac/vendor-native/catalyst/appsail/worker/Dockerfile -t invoice-ocr-pipeline-worker:latest .
+```
 
 ## One-time setup (needs to happen at your keyboard, not mine)
 
@@ -66,12 +75,20 @@ This generates the real `catalyst.json`, `.catalystrc`, and
 commit `catalyst.json` and both `app-config.json` files (not
 `.catalystrc`, which is local auth state — already in `.gitignore`).
 
-After generation, edit `app-config.json` for each service to set the
-memory/startup command matching `blueprint/platform.yaml`
-(`compute.cpu`/`memory_gib` for api, `compute.worker.*` for worker) —
-the docs confirm these fields are editable post-generation but don't
-publish the full field schema, so match whatever keys the CLI actually
-generates rather than the blueprint's naming.
+After generation, edit `app-config.json` for each service to set:
+- memory/CPU matching `blueprint/platform.yaml` (`compute.*` for api, `compute.worker.*` for worker) — exact field names not published, match whatever the CLI generates
+- environment variables (see below)
+
+## Required environment variables per service
+
+Set these in each service's `app-config.json` after generation — real
+values, never committed:
+
+| Variable | api | worker | Used by |
+|---|:-:|:-:|---|
+| `STRATUS_BUCKET` | ✓ | ✓ | `CatalystStratusObjectStore` |
+| `DATABASE_URL` | ✓ | ✓ | `PostgresInvoiceRepository`, via `CatalystEnvSecretProvider` |
+| `CATALYST_WORKER_APPSAIL_NAME` | ✓ | — | `CatalystJobQueue.enqueue()` — the worker's registered AppSail service name |
 
 ## CI auth
 
@@ -90,11 +107,16 @@ secrets above.
 
 - **No dry-run/plan flag exists in the Catalyst CLI.** `scripts/adapters/catalyst.sh plan` can only validate that `catalyst.json` exists locally — it cannot show what would change before deploying. Review for a Catalyst change has to come from the PR diff of the config files themselves.
 - **No `appsail:delete` command is documented.** `scripts/adapters/catalyst.sh destroy` can remove Functions via `functions:delete` but AppSail services must be deleted through the Catalyst console.
-- **Queue capability is unresolved** — see `docs/provider-matrix.md`.
+- **Two SDK details assumed, not confirmed**: the byte-content attribute on `bucket.get_object()`'s response, and `app.zia()` as the OCR accessor. Flagged inline in the adapter code — verify once the SDK is actually runnable against a real project.
+- **Failed extractions don't auto-retry.** `FAILED` is a terminal status; there's no requeue mechanism yet.
+- `catalyst.json` / `app-config.json` / a real Catalyst project don't exist yet — nothing here has actually been deployed or run against the live SDK.
 
 ## Sources
 
 - [CLI command reference](https://docs.catalyst.zoho.com/en/cli/v1/cli-command-reference/)
 - [Deploy options (`--only`/`--except`/`--ignore-scripts`)](https://docs.catalyst.zoho.com/en/cli/v1/deploy-resources/deploy-options/)
 - [Add an AppSail service](https://docs.catalyst.zoho.com/en/cli/v1/add-appsail/)
-- [Functions directory structure](https://docs.catalyst.zoho.com/en/cli/v1/project-directory-structure/functions-directory/)
+- [Python SDK components](https://docs.catalyst.zoho.com/en/sdk/python/v1/components/)
+- [Stratus upload/download](https://docs.catalyst.zoho.com/en/sdk/python/v1/cloud-scale/stratus/upload-object/)
+- [Job Scheduling implementation](https://docs.catalyst.zoho.com/en/job-scheduling/help/implementation/submit-jobs-using-jobs/)
+- [Zia OCR](https://docs.catalyst.zoho.com/en/sdk/python/v1/zia/ocr/)

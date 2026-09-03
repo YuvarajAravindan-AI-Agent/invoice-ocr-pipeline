@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
+from app.application.ports import ExtractionJobMessage
 from app.application.use_cases.process_extraction_job import ProcessExtractionJobUseCase
 from app.domain.entities import Invoice, InvoiceStatus
 from app.domain.extraction import ExtractionResult
@@ -111,3 +112,35 @@ def test_extractor_failure_marks_invoice_failed_and_nacks():
     assert updated.error_message == "model unavailable"
     assert len(queue.nacked) == 1
     assert len(queue.acked) == 0
+
+
+def test_execute_with_explicit_message_skips_queue_receive():
+    """Covers the push-delivery path (Catalyst's worker HTTP handler) —
+    see app/adapters/catalyst/job_queue.py, whose receive() isn't
+    implementable, so the message must come in as an argument instead."""
+    object_store = FakeObjectStore()
+    invoices = FakeInvoiceRepository()
+    queue = FakeExtractionQueue()  # left empty on purpose — nothing enqueued
+    invoice = _make_pending_invoice(invoices, object_store)
+
+    extractor = FakeOcrExtractor(
+        result=ExtractionResult(
+            vendor_name="Acme Corp",
+            invoice_number="INV-001",
+            invoice_date_iso=None,
+            currency="INR",
+            subtotal=Decimal("100.00"),
+            tax=Decimal("18.00"),
+            total=Decimal("118.00"),
+            confidence_score=0.95,
+            line_items=[],
+        )
+    )
+    use_case = ProcessExtractionJobUseCase(object_store, invoices, queue, extractor)
+
+    message = ExtractionJobMessage(invoice_id=invoice.id, receipt_handle="pushed-directly")
+    assert use_case.execute(message=message) is True
+
+    updated = invoices.get(invoice.id)
+    assert updated.status == InvoiceStatus.EXTRACTED
+    assert len(queue.acked) == 1  # ack() is still called, just never receive()

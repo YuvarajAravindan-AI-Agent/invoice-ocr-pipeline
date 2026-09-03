@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.application.ports import (
+    ExtractionJobMessage,
     ExtractionQueue,
     InvoiceRepository,
     ObjectStore,
@@ -13,10 +14,24 @@ from app.domain.validation import validate_extraction
 
 
 class ProcessExtractionJobUseCase:
-    """Called from the worker: pulls one job off the queue, runs
-    extraction, validates the result, and updates the invoice record.
-    Returns False if there was no job to process, so the worker's poll
-    loop can back off."""
+    """Runs extraction for one job, validates the result, and updates the
+    invoice record.
+
+    Two delivery models are supported, since not every provider's queue
+    works the same way (see docs/provider-matrix.md):
+      - Pull-based (e.g. a worker poll loop against SQS/similar): call
+        execute() with no argument — it calls extraction_queue.receive()
+        itself. Returns False if there was nothing to process.
+      - Push-based (e.g. Catalyst Jobs, which POST directly to the
+        worker's HTTP endpoint): the adapter already has the message
+        from the request body, so call execute(message=...) directly.
+        extraction_queue.receive() is never called in this path.
+
+    In both cases extraction_queue.ack()/nack() are still called at the
+    end, but a push-based adapter may implement those as no-ops if the
+    platform's own delivery guarantees make them meaningless — see
+    app/adapters/catalyst/job_queue.py.
+    """
 
     def __init__(
         self,
@@ -30,8 +45,9 @@ class ProcessExtractionJobUseCase:
         self._queue = extraction_queue
         self._extractor = ocr_extractor
 
-    def execute(self) -> bool:
-        message = self._queue.receive()
+    def execute(self, message: ExtractionJobMessage | None = None) -> bool:
+        if message is None:
+            message = self._queue.receive()
         if message is None:
             return False
 
