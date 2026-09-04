@@ -77,6 +77,6 @@ class ExtractionJudge(Protocol):
     company or OCR noise, does subtotal + tax reconcile with total, does
     anything in the raw OCR text contradict the parsed fields — and
     decides accept vs. flag, instead of a hardcoded confidence
-    threshold. See app/adapters/anthropic/extraction_judge.py."""
+    threshold. See app/adapters/deepseek/extraction_judge.py."""
 
     def judge(self, result: ExtractionResult, deterministic_issues: list[str]) -> ExtractionJudgment: ...

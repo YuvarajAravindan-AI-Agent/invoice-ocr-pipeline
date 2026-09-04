@@ -1,4 +1,4 @@
-"""ExtractionJudge implemented against the Claude API — the one
+"""ExtractionJudge implemented against the DeepSeek API — the one
 genuinely agentic step in this pipeline. Everything upstream (Zia OCR,
 the regex field parser in app/adapters/catalyst/_invoice_text_parser.py,
 the deterministic arithmetic checks in app/domain/validation.py) is
@@ -9,41 +9,52 @@ model *decide* — accept automatically, or flag for human review, with
 its own reasoning — rather than following a hardcoded confidence
 threshold.
 
-Uses tool use (forced via tool_choice) rather than asking for JSON in
-prose, so the decision comes back as a structured, reliably-parseable
-object instead of something that needs regex/markdown-fence stripping
-to parse.
+DeepSeek's API is OpenAI-compatible (same request/response shape as
+the OpenAI Chat Completions API, just a different base_url), so this
+uses the `openai` SDK rather than a DeepSeek-specific one — confirmed
+against a live call, not assumed from docs: forced function calling via
+tool_choice={"type": "function", "function": {"name": ...}} works
+exactly like OpenAI's, returning a tool_calls entry with a JSON string
+in .function.arguments (not a typed .input dict like Anthropic's
+tool_use blocks — that JSON has to be parsed explicitly).
 """
 
 from __future__ import annotations
 
+import json
+
 from app.domain.extraction import ExtractionResult
 from app.domain.judgment import ExtractionJudgment
 
+_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
 _SUBMIT_JUDGMENT_TOOL = {
-    "name": "submit_judgment",
-    "description": (
-        "Submit your judgment on whether this invoice extraction should be "
-        "accepted automatically or flagged for human review."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "accept": {
-                "type": "boolean",
-                "description": "true to accept automatically, false to flag for human review",
+    "type": "function",
+    "function": {
+        "name": "submit_judgment",
+        "description": (
+            "Submit your judgment on whether this invoice extraction should be "
+            "accepted automatically or flagged for human review."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accept": {
+                    "type": "boolean",
+                    "description": "true to accept automatically, false to flag for human review",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "One or two sentences explaining the decision, written for a human reviewer",
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific problems found beyond what was already flagged; empty if none",
+                },
             },
-            "reasoning": {
-                "type": "string",
-                "description": "One or two sentences explaining the decision, written for a human reviewer",
-            },
-            "issues": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Specific problems found beyond what was already flagged; empty if none",
-            },
+            "required": ["accept", "reasoning", "issues"],
         },
-        "required": ["accept", "reasoning", "issues"],
     },
 }
 
@@ -79,15 +90,15 @@ they noise (e.g. a missing tax field on an invoice that plausibly has no tax)?
 Call submit_judgment with your decision."""
 
 
-class ClaudeExtractionJudge:
-    def __init__(self, api_key: str, model: str = "claude-haiku-4-5") -> None:
+class DeepSeekExtractionJudge:
+    def __init__(self, api_key: str, model: str = "deepseek-chat") -> None:
         # Imported lazily so importing this module doesn't require the
-        # anthropic package unless this adapter is actually constructed
+        # openai package unless this adapter is actually constructed
         # (matches the lazy-import style already used for the SDK in
         # app/adapters/catalyst/*.py's per-request initialize() pattern).
-        import anthropic
+        from openai import OpenAI
 
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, base_url=_DEEPSEEK_BASE_URL)
         self._model = model
 
     def judge(self, result: ExtractionResult, deterministic_issues: list[str]) -> ExtractionJudgment:
@@ -102,16 +113,16 @@ class ClaudeExtractionJudge:
             deterministic_issues=deterministic_issues or "none",
         )
 
-        response = self._client.messages.create(
+        response = self._client.chat.completions.create(
             model=self._model,
             max_tokens=500,
             tools=[_SUBMIT_JUDGMENT_TOOL],
-            tool_choice={"type": "tool", "name": "submit_judgment"},
+            tool_choice={"type": "function", "function": {"name": "submit_judgment"}},
             messages=[{"role": "user", "content": prompt}],
         )
 
-        tool_use = next(block for block in response.content if block.type == "tool_use")
-        data = tool_use.input
+        tool_call = response.choices[0].message.tool_calls[0]
+        data = json.loads(tool_call.function.arguments)
 
         return ExtractionJudgment(
             accept=bool(data["accept"]),

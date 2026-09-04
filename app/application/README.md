@@ -16,7 +16,7 @@ seam: everything else here is deterministic (OCR call, regex field
 parsing, fixed arithmetic checks in `../domain/validation.py`) —
 `ExtractionJudge` is where an LLM actually reasons about the result and
 decides accept vs. flag, instead of a hardcoded rule. See
-`../adapters/anthropic/README.md`.
+`../adapters/deepseek/README.md`.
 
 ## Use cases (`use_cases/`)
 
