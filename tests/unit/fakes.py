@@ -11,6 +11,7 @@ from uuid import UUID
 from app.application.ports import ExtractionJobMessage
 from app.domain.entities import Invoice
 from app.domain.extraction import ExtractionResult
+from app.domain.judgment import ExtractionJudgment
 
 
 class FakeObjectStore:
@@ -73,3 +74,30 @@ class FakeOcrExtractor:
             raise self._error
         assert self._result is not None
         return self._result
+
+
+class FakeExtractionJudge:
+    """Defaults to agreeing with the deterministic checks (accept iff no
+    deterministic issues), matching the pre-agentic behavior, so
+    existing tests don't need to know about judgment unless they're
+    specifically testing it. Pass accept/reasoning/issues to override."""
+
+    def __init__(
+        self,
+        accept: bool | None = None,
+        reasoning: str = "fake judgment",
+        issues: list[str] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._accept = accept
+        self._reasoning = reasoning
+        self._issues = issues or []
+        self._error = error
+        self.calls: list[tuple[ExtractionResult, list[str]]] = []
+
+    def judge(self, result: ExtractionResult, deterministic_issues: list[str]) -> ExtractionJudgment:
+        self.calls.append((result, deterministic_issues))
+        if self._error is not None:
+            raise self._error
+        accept = (not deterministic_issues) if self._accept is None else self._accept
+        return ExtractionJudgment(accept=accept, reasoning=self._reasoning, issues=self._issues)

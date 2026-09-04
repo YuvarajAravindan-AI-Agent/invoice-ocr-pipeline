@@ -22,6 +22,7 @@ import zcatalyst_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
+from app.adapters.anthropic.extraction_judge import ClaudeExtractionJudge
 from app.adapters.catalyst.job_queue import CatalystJobQueue
 from app.adapters.catalyst.object_store import CatalystStratusObjectStore
 from app.adapters.catalyst.ocr_extractor import CatalystZiaOcrExtractor
@@ -47,7 +48,10 @@ def get_process_job(catalyst_app=Depends(get_catalyst_app)) -> ProcessExtraction
     invoice_repository = PostgresInvoiceRepository(_secrets.get("DATABASE_URL"))
     extraction_queue = CatalystJobQueue(catalyst_app)
     ocr_extractor = CatalystZiaOcrExtractor(catalyst_app)
-    return ProcessExtractionJobUseCase(object_store, invoice_repository, extraction_queue, ocr_extractor)
+    extraction_judge = ClaudeExtractionJudge(_secrets.get("ANTHROPIC_API_KEY"))
+    return ProcessExtractionJobUseCase(
+        object_store, invoice_repository, extraction_queue, ocr_extractor, extraction_judge
+    )
 
 
 class ProcessJobRequest(BaseModel):

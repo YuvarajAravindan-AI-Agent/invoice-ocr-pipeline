@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS invoices (
     confidence_score   REAL,
     line_items         JSONB NOT NULL DEFAULT '[]',
     validation_issues  JSONB NOT NULL DEFAULT '[]',
-    error_message      TEXT
+    error_message      TEXT,
+    review_reasoning   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS invoices_status_idx ON invoices (status);
+
+-- Migration for tables created before review_reasoning existed:
+-- ALTER TABLE invoices ADD COLUMN IF NOT EXISTS review_reasoning TEXT;

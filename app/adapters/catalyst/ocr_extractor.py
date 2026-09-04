@@ -98,4 +98,5 @@ class CatalystZiaOcrExtractor:
             total=fields["total"],
             confidence_score=confidence,
             line_items=[],  # not parsed — see _invoice_text_parser.py limitations
+            raw_text=text,
         )

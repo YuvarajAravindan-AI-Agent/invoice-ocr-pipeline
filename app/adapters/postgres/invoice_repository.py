@@ -52,6 +52,7 @@ def _row_to_invoice(row: dict) -> Invoice:
         line_items=_line_items_from_json(row["line_items"]),
         validation_issues=list(row["validation_issues"] or []),
         error_message=row["error_message"],
+        review_reasoning=row["review_reasoning"],
     )
 
 
@@ -70,12 +71,12 @@ class PostgresInvoiceRepository:
                     id, status, source_file_key, uploaded_at,
                     vendor_name, invoice_number, invoice_date, currency,
                     subtotal, tax, total, confidence_score,
-                    line_items, validation_issues, error_message
+                    line_items, validation_issues, error_message, review_reasoning
                 ) VALUES (
                     %(id)s, %(status)s, %(source_file_key)s, %(uploaded_at)s,
                     %(vendor_name)s, %(invoice_number)s, %(invoice_date)s, %(currency)s,
                     %(subtotal)s, %(tax)s, %(total)s, %(confidence_score)s,
-                    %(line_items)s, %(validation_issues)s, %(error_message)s
+                    %(line_items)s, %(validation_issues)s, %(error_message)s, %(review_reasoning)s
                 )
                 """,
                 self._params(invoice),
@@ -103,7 +104,8 @@ class PostgresInvoiceRepository:
                     confidence_score = %(confidence_score)s,
                     line_items = %(line_items)s,
                     validation_issues = %(validation_issues)s,
-                    error_message = %(error_message)s
+                    error_message = %(error_message)s,
+                    review_reasoning = %(review_reasoning)s
                 WHERE id = %(id)s
                 """,
                 self._params(invoice),
@@ -127,4 +129,5 @@ class PostgresInvoiceRepository:
             "line_items": _line_items_to_json(invoice.line_items),
             "validation_issues": json.dumps(invoice.validation_issues),
             "error_message": invoice.error_message,
+            "review_reasoning": invoice.review_reasoning,
         }

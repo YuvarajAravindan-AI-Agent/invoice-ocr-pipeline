@@ -5,12 +5,14 @@ from datetime import datetime
 
 from app.application.ports import (
     ExtractionJobMessage,
+    ExtractionJudge,
     ExtractionQueue,
     InvoiceRepository,
     ObjectStore,
     OcrExtractor,
 )
 from app.domain.entities import InvoiceStatus
+from app.domain.judgment import ExtractionJudgment
 from app.domain.validation import validate_extraction
 
 
@@ -40,11 +42,13 @@ class ProcessExtractionJobUseCase:
         invoice_repository: InvoiceRepository,
         extraction_queue: ExtractionQueue,
         ocr_extractor: OcrExtractor,
+        extraction_judge: ExtractionJudge,
     ) -> None:
         self._object_store = object_store
         self._invoices = invoice_repository
         self._queue = extraction_queue
         self._extractor = ocr_extractor
+        self._judge = extraction_judge
 
     def execute(self, message: ExtractionJobMessage | None = None) -> bool:
         if message is None:
@@ -78,7 +82,20 @@ class ProcessExtractionJobUseCase:
             self._queue.nack(message)
             return True
 
-        issues = validate_extraction(result)
+        deterministic_issues = validate_extraction(result)
+
+        try:
+            # The one genuinely agentic step: an LLM reasons over the
+            # extraction (given the deterministic checks as context) and
+            # decides accept vs. flag — replacing what used to be a
+            # hardcoded "any issues -> NEEDS_REVIEW" rule.
+            judgment = self._judge.judge(result, deterministic_issues)
+        except Exception as exc:  # noqa: BLE001 — judge unavailable shouldn't crash the pipeline
+            judgment = ExtractionJudgment(
+                accept=not deterministic_issues,
+                reasoning=f"ExtractionJudge unavailable ({exc}); fell back to rule-based validation only.",
+                issues=[],
+            )
 
         invoice.vendor_name = result.vendor_name
         invoice.invoice_number = result.invoice_number
@@ -91,8 +108,9 @@ class ProcessExtractionJobUseCase:
         invoice.total = result.total
         invoice.confidence_score = result.confidence_score
         invoice.line_items = result.line_items
-        invoice.validation_issues = issues
-        invoice.status = InvoiceStatus.NEEDS_REVIEW if issues else InvoiceStatus.EXTRACTED
+        invoice.validation_issues = deterministic_issues + judgment.issues
+        invoice.review_reasoning = judgment.reasoning
+        invoice.status = InvoiceStatus.EXTRACTED if judgment.accept else InvoiceStatus.NEEDS_REVIEW
 
         self._invoices.update(invoice)
         self._queue.ack(message)

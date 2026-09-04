@@ -43,3 +43,7 @@ class Invoice:
     line_items: list[LineItem] = field(default_factory=list)
     validation_issues: list[str] = field(default_factory=list)
     error_message: str | None = None
+    # The ExtractionJudge's own explanation for its accept/flag decision —
+    # kept distinct from validation_issues (deterministic rule findings)
+    # so a reviewer can see the agent's reasoning, not just a checklist.
+    review_reasoning: str | None = None

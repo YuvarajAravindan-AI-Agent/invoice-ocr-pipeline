@@ -24,3 +24,7 @@ class ExtractionResult:
     total: Decimal | None
     confidence_score: float
     line_items: list[LineItem] = field(default_factory=list)
+    # Raw OCR text, kept alongside the parsed fields so an ExtractionJudge
+    # can reason about discrepancies between what the OCR actually saw and
+    # what the (regex-based, low-accuracy) parser pulled out of it.
+    raw_text: str = ""

@@ -89,6 +89,7 @@ values, never committed:
 | `STRATUS_BUCKET` | ✓ | ✓ | `CatalystStratusObjectStore` |
 | `DATABASE_URL` | ✓ | ✓ | `PostgresInvoiceRepository`, via `CatalystEnvSecretProvider` |
 | `WORKER_APPSAIL_ID` | ✓ | — | `CatalystJobQueue.enqueue()` — the worker's registered AppSail service name |
+| `ANTHROPIC_API_KEY` | — | ✓ | `ClaudeExtractionJudge` — see `../../../app/adapters/anthropic/README.md` |
 
 ## CI auth
 

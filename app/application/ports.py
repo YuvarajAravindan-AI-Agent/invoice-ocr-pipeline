@@ -11,6 +11,7 @@ from uuid import UUID
 
 from app.domain.entities import Invoice
 from app.domain.extraction import ExtractionResult
+from app.domain.judgment import ExtractionJudgment
 
 
 class ObjectStore(Protocol):
@@ -66,3 +67,16 @@ class OcrExtractor(Protocol):
 
 class SecretProvider(Protocol):
     def get(self, name: str) -> str: ...
+
+
+class ExtractionJudge(Protocol):
+    """The one genuinely agentic seam in this pipeline: everything else
+    (OCR, regex field parsing, deterministic validation.py checks) is
+    fixed logic. This is where an LLM actually reasons about whether an
+    extraction is trustworthy — does the vendor_name look like a real
+    company or OCR noise, does subtotal + tax reconcile with total, does
+    anything in the raw OCR text contradict the parsed fields — and
+    decides accept vs. flag, instead of a hardcoded confidence
+    threshold. See app/adapters/anthropic/extraction_judge.py."""
+
+    def judge(self, result: ExtractionResult, deterministic_issues: list[str]) -> ExtractionJudgment: ...
