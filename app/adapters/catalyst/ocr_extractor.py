@@ -20,26 +20,68 @@ NOTE: `app.zia()` as the accessor is inferred from the same pattern as
 app.stratus()/app.job_scheduling() (see object_store.py/job_queue.py)
 but wasn't directly confirmed — verify against the SDK before relying
 on this.
+
+Takes an already-initialized CatalystApp — see object_store.py's module
+docstring for why this isn't constructed with zcatalyst_sdk.initialize()
+internally.
 """
 
 from __future__ import annotations
 
 import io
 
-import zcatalyst_sdk
-
 from app.adapters.catalyst._invoice_text_parser import parse_invoice_text
 from app.domain.extraction import ExtractionResult
 
 
+_EXTENSION_BY_CONTENT_TYPE = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "application/pdf": "pdf",
+}
+
+
+class _NamedBytesIO(io.BytesIO):
+    """A plain io.BytesIO has no .name — io.BufferedReader.name is
+    read-only and derived from its wrapped raw stream, so a bare
+    BufferedReader(BytesIO(...)) has none either. The underlying
+    `requests` library (used internally by the SDK) relies on that
+    attribute to set the multipart filename/content-type; without it,
+    the upload has no filename and Zia's backend can't detect the image
+    format, causing a generic CatalystZiaError({'code': 'ML_ERROR',
+    'message': 'Unable to process the request'}) — confirmed by testing
+    identical requests with and without a name set. Subclassing BytesIO
+    (rather than assigning .name on the built-in class directly, which
+    fails with AttributeError: not writable) is what makes the
+    attribute settable.
+    """
+
+
 class CatalystZiaOcrExtractor:
-    def __init__(self) -> None:
-        app = zcatalyst_sdk.initialize()
-        self._zia = app.zia()
+    def __init__(self, catalyst_app) -> None:
+        self._zia = catalyst_app.zia()
 
     def extract(self, file_bytes: bytes, content_type: str) -> ExtractionResult:
+        # The SDK's own _is_valid_file_type check does a strict
+        # isinstance(file, io.BufferedReader) — a plain io.BytesIO fails
+        # it with CatalystZiaError("Invalid-Argument", "File must be a
+        # instance of BufferReader"), confirmed via a real error caught
+        # in production. io.BufferedReader normally wraps a RawIOBase,
+        # but wrapping a BytesIO works fine in practice (it only needs
+        # readinto()) and satisfies the isinstance check.
+        extension = _EXTENSION_BY_CONTENT_TYPE.get(content_type, "bin")
+        named_stream = _NamedBytesIO(file_bytes)
+        named_stream.name = f"invoice.{extension}"
         response = self._zia.extract_optical_characters(
-            io.BytesIO(file_bytes), {"language": "eng", "modelType": "OCR"}
+            io.BufferedReader(named_stream),
+            # SDK's ICatalystOCROptions TypedDict key is model_type
+            # (snake_case), not modelType — confirmed by reading the
+            # installed SDK source directly, not docs (which showed
+            # modelType). The wrong key was likely silently ignored by
+            # the API, causing generic ML_ERROR/"Unable to process the
+            # request" failures instead of running OCR.
+            {"language": "eng", "model_type": "OCR"},
         )
         text = response["text"]
         confidence = response["confidence"] / 100.0  # Zia returns 0-100, our port uses 0-1

@@ -88,7 +88,7 @@ values, never committed:
 |---|:-:|:-:|---|
 | `STRATUS_BUCKET` | ✓ | ✓ | `CatalystStratusObjectStore` |
 | `DATABASE_URL` | ✓ | ✓ | `PostgresInvoiceRepository`, via `CatalystEnvSecretProvider` |
-| `CATALYST_WORKER_APPSAIL_NAME` | ✓ | — | `CatalystJobQueue.enqueue()` — the worker's registered AppSail service name |
+| `WORKER_APPSAIL_ID` | ✓ | — | `CatalystJobQueue.enqueue()` — the worker's registered AppSail service name |
 
 ## CI auth
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 from datetime import datetime
 
 from app.application.ports import (
@@ -63,7 +64,13 @@ class ProcessExtractionJobUseCase:
 
         try:
             file_bytes = self._object_store.get(invoice.source_file_key)
-            result = self._extractor.extract(file_bytes, content_type="application/octet-stream")
+            # source_file_key carries the original filename (see
+            # submit_invoice.py) — guessing content_type from its
+            # extension rather than hardcoding application/octet-stream
+            # lets extractors that need to know the format (e.g. Zia OCR
+            # needing a filename it can sniff) actually get one.
+            content_type = mimetypes.guess_type(invoice.source_file_key)[0] or "application/octet-stream"
+            result = self._extractor.extract(file_bytes, content_type=content_type)
         except Exception as exc:  # noqa: BLE001 — deliberately broad: any extractor failure means retry/DLQ, not crash the worker
             invoice.status = InvoiceStatus.FAILED
             invoice.error_message = str(exc)

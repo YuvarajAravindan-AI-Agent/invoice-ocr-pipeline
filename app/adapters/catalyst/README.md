@@ -18,11 +18,10 @@ Required environment variables (set in each AppSail service's
 
 - `STRATUS_BUCKET` — bucket name for `CatalystStratusObjectStore`
 - `DATABASE_URL` — Postgres connection string, read via `CatalystEnvSecretProvider`
-- `CATALYST_WORKER_APPSAIL_NAME` — the worker service's registered name, needed by `CatalystJobQueue.enqueue()` (API service only)
+- `WORKER_APPSAIL_ID` — the worker service's registered name, needed by `CatalystJobQueue.enqueue()` (API service only)
 
-Two things flagged in the code itself as unconfirmed against the SDK
-rather than assumed: the exact attribute holding byte content on
-`bucket.get_object()`'s response, and whether `app.zia()` is the
-correct accessor name. Verify both once the SDK is actually installed
-and callable against a real project.
+`bucket.get_object()` returns raw bytes directly (confirmed via a real
+`AttributeError` caught in production, not docs — the response is not
+wrapped in an object with a `.content` attribute as the docs implied).
+`app.zia()` as the OCR accessor name is confirmed working.
 
