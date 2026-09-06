@@ -23,11 +23,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from app.adapters.deepseek.extraction_judge import DeepSeekExtractionJudge
+from app.adapters.catalyst.invoice_repository import CatalystDataStoreInvoiceRepository
 from app.adapters.catalyst.job_queue import CatalystJobQueue
 from app.adapters.catalyst.object_store import CatalystStratusObjectStore
 from app.adapters.catalyst.ocr_extractor import CatalystZiaOcrExtractor
 from app.adapters.catalyst.secret_provider import CatalystEnvSecretProvider
-from app.adapters.postgres.invoice_repository import PostgresInvoiceRepository
 from app.application.ports import ExtractionJobMessage
 from app.application.use_cases.process_extraction_job import ProcessExtractionJobUseCase
 
@@ -45,7 +45,7 @@ def get_catalyst_app(request: Request):
 
 def get_process_job(catalyst_app=Depends(get_catalyst_app)) -> ProcessExtractionJobUseCase:
     object_store = CatalystStratusObjectStore(catalyst_app)
-    invoice_repository = PostgresInvoiceRepository(_secrets.get("DATABASE_URL"))
+    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     extraction_queue = CatalystJobQueue(catalyst_app)
     ocr_extractor = CatalystZiaOcrExtractor(catalyst_app)
     extraction_judge = DeepSeekExtractionJudge(_secrets.get("DEEPSEEK_API_KEY"))

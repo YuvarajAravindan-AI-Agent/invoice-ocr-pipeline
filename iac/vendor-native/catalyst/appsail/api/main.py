@@ -17,10 +17,10 @@ import zcatalyst_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 
+from app.adapters.catalyst.invoice_repository import CatalystDataStoreInvoiceRepository
 from app.adapters.catalyst.job_queue import CatalystJobQueue
 from app.adapters.catalyst.object_store import CatalystStratusObjectStore
 from app.adapters.catalyst.secret_provider import CatalystEnvSecretProvider
-from app.adapters.postgres.invoice_repository import PostgresInvoiceRepository
 from app.application.use_cases.get_invoice_status import GetInvoiceStatusUseCase
 from app.application.use_cases.submit_invoice import SubmitInvoiceCommand, SubmitInvoiceUseCase
 
@@ -42,15 +42,13 @@ def get_catalyst_app(request: Request):
 
 def get_submit_invoice(catalyst_app=Depends(get_catalyst_app)) -> SubmitInvoiceUseCase:
     object_store = CatalystStratusObjectStore(catalyst_app)
-    invoice_repository = PostgresInvoiceRepository(_secrets.get("DATABASE_URL"))
+    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     extraction_queue = CatalystJobQueue(catalyst_app)
     return SubmitInvoiceUseCase(object_store, invoice_repository, extraction_queue)
 
 
-def get_invoice_status_use_case() -> GetInvoiceStatusUseCase:
-    # No Catalyst SDK dependency — Postgres only — so this doesn't need
-    # get_catalyst_app at all.
-    invoice_repository = PostgresInvoiceRepository(_secrets.get("DATABASE_URL"))
+def get_invoice_status_use_case(catalyst_app=Depends(get_catalyst_app)) -> GetInvoiceStatusUseCase:
+    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     return GetInvoiceStatusUseCase(invoice_repository)
 
 

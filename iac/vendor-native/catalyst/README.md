@@ -12,7 +12,7 @@ current Catalyst CLI/SDK docs (docs.catalyst.zoho.com, checked
 | `compute` (API, 2 vCPU/4 GiB, HTTPS ingress) | AppSail, custom Docker runtime | AppSail supports configurable resources and a custom OCI image; Functions are sized for lighter, shorter-lived workloads |
 | `compute.worker` (OCR worker, 4 vCPU/8 GiB, no ingress) | AppSail, custom Docker runtime | Same reasoning — this is the expensive part of the service |
 | `storage.object_storage` | Stratus | `app/adapters/catalyst/object_store.py` |
-| `data.relational_database` | External managed PostgreSQL (not Catalyst Data Store) | Blueprint asks for PostgreSQL specifically for portability; Catalyst Data Store is NoSQL and would be Tier 3. Implemented once, shared across providers — `app/adapters/postgres/` |
+| `data.relational_database` | Catalyst Data Store (**revised** — see below) | Originally external managed PostgreSQL for portability (`app/adapters/postgres/`, still used by that name for AWS/Azure/GCP/Alibaba). Reverted to Data Store for Catalyst specifically after confirming against a live deploy that AppSail's outbound network rejects both raw Postgres (5432) and general outbound HTTPS to a non-Catalyst host — see `app/adapters/catalyst/invoice_repository.py`. Explicit Tier 3 lock-in, not an oversight — see `../../../docs/provider-matrix.md` |
 | `queue` (`invoice-extraction-jobs`) | Job Scheduling | **Decided** — see `../../../docs/provider-matrix.md`. Push delivery (Catalyst POSTs to the worker), not pull — changes the worker's entrypoint shape, see below |
 | OCR/extraction | Zia OCR + regex heuristics | **Decided** — see `../../../docs/provider-matrix.md`. Raw text only, no structured fields; deliberately low-accuracy MVP |
 
@@ -82,14 +82,39 @@ After generation, edit `app-config.json` for each service to set:
 ## Required environment variables per service
 
 Set these in each service's `app-config.json` after generation — real
-values, never committed:
+values, never committed. For Docker Image AppSail services (this
+project's actual deployment mode), `app-config.json` doesn't exist —
+these have to be set via the Catalyst console's Configuration section,
+or baked into the image at build time (`docker build --build-arg`),
+never written into the committed Dockerfile.
 
 | Variable | api | worker | Used by |
 |---|:-:|:-:|---|
 | `STRATUS_BUCKET` | ✓ | ✓ | `CatalystStratusObjectStore` |
-| `DATABASE_URL` | ✓ | ✓ | `PostgresInvoiceRepository`, via `CatalystEnvSecretProvider` |
 | `WORKER_APPSAIL_ID` | ✓ | — | `CatalystJobQueue.enqueue()` — the worker's registered AppSail service name |
 | `DEEPSEEK_API_KEY` | — | ✓ | `DeepSeekExtractionJudge` — see `../../../app/adapters/deepseek/README.md` |
+
+No `DATABASE_URL`/connection-string secret at all for this provider —
+`CatalystDataStoreInvoiceRepository` (`app/adapters/catalyst/invoice_repository.py`)
+talks to Data Store through the same `catalyst_app` SDK instance
+already used for Stratus/Zia, not a network connection with its own
+credential.
+
+**Why Data Store instead of external PostgreSQL, despite the
+portability cost:** tried an external Postgres first (on a Contabo
+box), confirmed against a live deploy that Catalyst AppSail's outbound
+network rejects raw Postgres (port 5432) — the exact same image that
+queries Postgres fine via `docker run` locally gets a fast (~1s)
+gateway-level 500 on Catalyst. Tried fronting that same Postgres with
+an HTTPS reverse proxy (PostgREST + Caddy) next, on the theory that
+only 5432 was blocked — same fast 500 over HTTPS too, pointing at a
+broader outbound restriction on AppSail rather than a port-specific
+one. Data Store sidesteps the question entirely since it's an
+in-platform call, not an outbound one. **One-time manual step**: the
+`invoices` table and its columns must be created via the Catalyst
+console first — see the docstring in `app/adapters/catalyst/invoice_repository.py`
+for the exact column list and types (no CLI/SDK path exists for Data
+Store table creation, confirmed against Zoho's own docs).
 
 ## CI auth
 
