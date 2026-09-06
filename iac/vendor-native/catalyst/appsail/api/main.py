@@ -10,12 +10,14 @@ app/adapters/catalyst/object_store.py's module docstring for why.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from uuid import UUID
 
 import uvicorn
 import zcatalyst_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse
 
 from app.adapters.catalyst.invoice_repository import CatalystDataStoreInvoiceRepository
 from app.adapters.catalyst.job_queue import CatalystJobQueue
@@ -55,6 +57,13 @@ def get_invoice_status_use_case(catalyst_app=Depends(get_catalyst_app)) -> GetIn
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/")
+def index() -> FileResponse:
+    # A manual upload/status form — this service otherwise has no UI,
+    # only the JSON endpoints below. See static/index.html.
+    return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 
 @app.post("/invoices", status_code=202)

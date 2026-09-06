@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 COPY iac/vendor-native/catalyst/appsail/api/main.py .
+COPY iac/vendor-native/catalyst/appsail/api/static/ ./static/
 
 EXPOSE 9000
 

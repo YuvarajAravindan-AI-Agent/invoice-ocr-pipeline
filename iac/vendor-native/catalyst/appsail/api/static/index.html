@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice OCR Pipeline</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --fg: #1a1a18; --dim: #6b6862; --line: #e2ded6;
+    --accent: #3a6b52; --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16151a; --fg: #e8e6e1; --dim: #8f8a82; --line: #2c2a30;
+      --accent: #7fbf9e; --card: #1d1c22;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    display: flex; justify-content: center; padding: 48px 20px;
+  }
+  .wrap { width: 100%; max-width: 640px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: 0.9rem; margin-bottom: 28px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 10px; padding: 28px;
+    text-align: center; cursor: pointer; transition: border-color .15s;
+  }
+  #drop.drag { border-color: var(--accent); }
+  #drop p { margin: 0; color: var(--dim); font-size: 0.92rem; }
+  #file { display: none; }
+  #filename { margin-top: 10px; font-size: 0.88rem; color: var(--fg); }
+  button {
+    margin-top: 16px; width: 100%; padding: 11px; border: none; border-radius: 8px;
+    background: var(--accent); color: #fff; font-size: 0.95rem; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #status { font-size: 0.88rem; color: var(--dim); margin-top: 6px; min-height: 1.2em; }
+  .field { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+  .field:last-child { border-bottom: none; }
+  .field .k { color: var(--dim); }
+  .field .v { text-align: right; max-width: 60%; word-break: break-word; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+  .badge.pending, .badge.processing { background: #f0e6c8; color: #7a5d00; }
+  .badge.extracted { background: #d7ecdd; color: #1f6b3a; }
+  .badge.needs_review { background: #fde3cf; color: #8a4a12; }
+  .badge.failed { background: #f6d6d6; color: #8a1f1f; }
+  ul.issues { margin: 10px 0 0; padding-left: 18px; font-size: 0.85rem; color: var(--dim); }
+  .reasoning { margin-top: 12px; font-size: 0.85rem; line-height: 1.5; color: var(--dim); font-style: italic; }
+  #result { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Invoice OCR Pipeline</h1>
+  <div class="sub">Upload an invoice (image or PDF) — OCR extraction with an agentic review step.</div>
+
+  <div class="card">
+    <div id="drop">
+      <p>Click to choose a file, or drag one here</p>
+      <div id="filename"></div>
+      <input type="file" id="file" accept=".png,.jpg,.jpeg,.pdf">
+    </div>
+    <button id="go" disabled>Upload &amp; process</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card" id="result">
+    <div class="field"><span class="k">Status</span><span class="v"><span id="badge" class="badge"></span></span></div>
+    <div class="field"><span class="k">Vendor</span><span class="v" id="f-vendor">—</span></div>
+    <div class="field"><span class="k">Invoice #</span><span class="v" id="f-number">—</span></div>
+    <div class="field"><span class="k">Subtotal</span><span class="v" id="f-subtotal">—</span></div>
+    <div class="field"><span class="k">Tax</span><span class="v" id="f-tax">—</span></div>
+    <div class="field"><span class="k">Total</span><span class="v" id="f-total">—</span></div>
+    <div class="field"><span class="k">Confidence</span><span class="v" id="f-confidence">—</span></div>
+    <div id="issues-wrap" style="display:none">
+      <div class="field"><span class="k">Validation issues</span><span class="v"></span></div>
+      <ul class="issues" id="f-issues"></ul>
+    </div>
+    <div class="reasoning" id="f-reasoning" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+const filenameEl = document.getElementById('filename');
+const go = document.getElementById('go');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+let selectedFile = null;
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) setFile(fileInput.files[0]);
+});
+
+function setFile(f) {
+  selectedFile = f;
+  filenameEl.textContent = f.name;
+  go.disabled = false;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+function money(v, currency) {
+  if (v === null || v === undefined) return '—';
+  return currency ? `${v} ${currency}` : v;
+}
+
+function renderInvoice(inv) {
+  resultEl.style.display = 'block';
+  const badge = document.getElementById('badge');
+  badge.textContent = inv.status;
+  badge.className = 'badge ' + inv.status;
+
+  document.getElementById('f-vendor').textContent = inv.vendor_name ?? '—';
+  document.getElementById('f-number').textContent = inv.invoice_number ?? '—';
+  document.getElementById('f-subtotal').textContent = money(inv.subtotal, inv.currency);
+  document.getElementById('f-tax').textContent = money(inv.tax, inv.currency);
+  document.getElementById('f-total').textContent = money(inv.total, inv.currency);
+  document.getElementById('f-confidence').textContent =
+    inv.confidence_score !== null && inv.confidence_score !== undefined
+      ? Math.round(inv.confidence_score * 100) + '%' : '—';
+
+  const issuesWrap = document.getElementById('issues-wrap');
+  const issuesList = document.getElementById('f-issues');
+  if (inv.validation_issues && inv.validation_issues.length) {
+    issuesWrap.style.display = 'block';
+    issuesList.innerHTML = inv.validation_issues.map(i => `<li>${esc(i)}</li>`).join('');
+  } else {
+    issuesWrap.style.display = 'none';
+  }
+
+  const reasoningEl = document.getElementById('f-reasoning');
+  if (inv.review_reasoning) {
+    reasoningEl.style.display = 'block';
+    reasoningEl.textContent = '"' + inv.review_reasoning + '"';
+  } else if (inv.error_message) {
+    reasoningEl.style.display = 'block';
+    reasoningEl.textContent = inv.error_message;
+  } else {
+    reasoningEl.style.display = 'none';
+  }
+}
+
+const TERMINAL = new Set(['extracted', 'needs_review', 'failed']);
+
+async function poll(invoiceId, attempt = 0) {
+  const res = await fetch(`/invoices/${invoiceId}`);
+  if (!res.ok) {
+    statusEl.textContent = 'Lost track of this invoice — try again.';
+    go.disabled = false;
+    return;
+  }
+  const inv = await res.json();
+  renderInvoice(inv);
+
+  if (TERMINAL.has(inv.status)) {
+    statusEl.textContent = '';
+    go.disabled = false;
+    return;
+  }
+  if (attempt > 30) {
+    statusEl.textContent = 'Still processing — check back later.';
+    go.disabled = false;
+    return;
+  }
+  statusEl.textContent = `Processing… (${inv.status})`;
+  setTimeout(() => poll(invoiceId, attempt + 1), 2000);
+}
+
+go.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  go.disabled = true;
+  resultEl.style.display = 'none';
+  statusEl.textContent = 'Uploading…';
+
+  const form = new FormData();
+  form.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/invoices', { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`upload failed (${res.status})`);
+    const { invoice_id } = await res.json();
+    statusEl.textContent = 'Submitted — waiting on extraction…';
+    poll(invoice_id);
+  } catch (err) {
+    statusEl.textContent = err.message;
+    go.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
