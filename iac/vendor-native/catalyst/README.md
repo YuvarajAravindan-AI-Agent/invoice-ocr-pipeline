@@ -135,7 +135,7 @@ secrets above.
 - **No `appsail:delete` command is documented.** `scripts/adapters/catalyst.sh destroy` can remove Functions via `functions:delete` but AppSail services must be deleted through the Catalyst console.
 - **Two SDK details assumed, not confirmed**: the byte-content attribute on `bucket.get_object()`'s response, and `app.zia()` as the OCR accessor. Flagged inline in the adapter code — verify once the SDK is actually runnable against a real project.
 - **Failed extractions don't auto-retry.** `FAILED` is a terminal status; there's no requeue mechanism yet.
-- **`catalyst.json` and both `app-config.json` files are not committed.** They're CLI-generated and account-specific (see "One-time setup" above) — this repo was previously deployed and run end-to-end against a real Catalyst project's live SDK (see the "Fix real Catalyst SDK bugs found deploying api/worker to live AppSail" commit), but that generated config was local-only and was never checked in, and the AppSail services it pointed at are no longer responding. Regenerating them via `catalyst init`/`appsail:add` is required before this can be redeployed.
+- **`catalyst.json` is committed** (regenerated via `catalyst appsail:add`, Docker Image source pointing at `localhost/invoice-ocr-pipeline-{api,worker}:latest`) — deploy with `catalyst deploy appsail --name <api|worker> --source docker://localhost/invoice-ocr-pipeline-<name>:latest --port 9000 -ni` after `docker build`ing both images from the repo root. `app-config.json` doesn't apply to Docker Image AppSail services at all; environment variables are set via the console's Configuration tab per service instead — see the table above.
 
 ## Sources
 

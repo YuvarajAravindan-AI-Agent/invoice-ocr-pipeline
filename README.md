@@ -23,19 +23,26 @@ for this service's current tier assignments.
 
 ## Status
 
-`app/` (ports-and-adapters domain/application code, Catalyst and
-Postgres adapters, and a DeepSeek-based `ExtractionJudge`) is
-implemented and was verified end-to-end against live Catalyst infra:
-invoice upload → Postgres row + Stratus object → Job Scheduling
-push-delivery → worker Zia OCR extraction → Postgres status update,
-with real extracted fields (confidence 0.99).
+**Live** on Catalyst — both AppSail services deployed and verified
+end-to-end: invoice upload → Stratus object + Data Store row (pending)
+→ Job Scheduling push-delivery → worker Zia OCR extraction → DeepSeek
+`ExtractionJudge` reasoning over the result → Data Store status update
+(`extracted`/`needs_review`/`failed`) → `GET` returning the full
+record. The judge has caught real extraction errors in practice — e.g.
+flagging a vendor name that was actually the document heading, and
+missed subtotal/tax/total fields the OCR text clearly contained.
 
-There is currently no live URL — `catalyst.json` and each service's
-`app-config.json` are account/CLI-generated and were never committed,
-so the deployment from that verification run isn't reproducible from
-this repo as-is. See [iac/vendor-native/catalyst/README.md](iac/vendor-native/catalyst/README.md)'s
-"One-time setup" and "Known gaps" for what's needed to redeploy.
+- `api`: https://api-50045555479.development.catalystappsail.in
+- `worker`: https://worker-50045555479.development.catalystappsail.in
+  (internal — receives Job Scheduling's push delivery, not meant to be
+  called directly)
+
+Uses Catalyst Data Store, not the `app/adapters/postgres/` adapter —
+see [iac/vendor-native/catalyst/README.md](iac/vendor-native/catalyst/README.md)
+for why. `catalyst.json` is committed; each service's environment
+variables are set via the Catalyst console (not `app-config.json`,
+which doesn't apply to Docker Image AppSail services).
 
 Catalyst is the only active provider in `deploy/provider-matrix.yaml`;
 AWS/Azure/GCP/Alibaba are present but `active: false` until validated
-per §10 of the architecture doc.
+per §10 of the architecture doc — those would use `app/adapters/postgres/`.
