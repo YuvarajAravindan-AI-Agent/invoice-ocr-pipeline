@@ -1,0 +1,18 @@
+{
+  "appsail": [
+    {
+      "source": "docker://localhost/invoice-ocr-pipeline-api:latest",
+      "name": "api",
+      "port": {
+        "http": 9000
+      }
+    },
+    {
+      "source": "docker://localhost/invoice-ocr-pipeline-worker:latest",
+      "name": "worker",
+      "port": {
+        "http": 9000
+      }
+    }
+  ]
+}
