@@ -23,7 +23,19 @@ for this service's current tier assignments.
 
 ## Status
 
-Scaffolding only — `iac/vendor-native/catalyst/` and `app/` are not yet
-implemented. Catalyst is the only active provider in
-`deploy/provider-matrix.yaml`; AWS/Azure/GCP/Alibaba are present but
-`active: false` until validated per §10 of the architecture doc.
+`app/` (ports-and-adapters domain/application code, Catalyst and
+Postgres adapters, and a DeepSeek-based `ExtractionJudge`) is
+implemented and was verified end-to-end against live Catalyst infra:
+invoice upload → Postgres row + Stratus object → Job Scheduling
+push-delivery → worker Zia OCR extraction → Postgres status update,
+with real extracted fields (confidence 0.99).
+
+There is currently no live URL — `catalyst.json` and each service's
+`app-config.json` are account/CLI-generated and were never committed,
+so the deployment from that verification run isn't reproducible from
+this repo as-is. See [iac/vendor-native/catalyst/README.md](iac/vendor-native/catalyst/README.md)'s
+"One-time setup" and "Known gaps" for what's needed to redeploy.
+
+Catalyst is the only active provider in `deploy/provider-matrix.yaml`;
+AWS/Azure/GCP/Alibaba are present but `active: false` until validated
+per §10 of the architecture doc.
