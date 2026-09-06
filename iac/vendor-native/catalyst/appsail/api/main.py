@@ -18,6 +18,7 @@ import zcatalyst_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.adapters.catalyst.invoice_repository import CatalystDataStoreInvoiceRepository
 from app.adapters.catalyst.job_queue import CatalystJobQueue
@@ -27,6 +28,11 @@ from app.application.use_cases.get_invoice_status import GetInvoiceStatusUseCase
 from app.application.use_cases.submit_invoice import SubmitInvoiceCommand, SubmitInvoiceUseCase
 
 app = FastAPI(title="invoice-ocr-pipeline-api")
+
+# Serves the two sample invoices linked from index.html so LinkedIn
+# visitors have something to test with, without needing a file of
+# their own — see static/samples/.
+app.mount("/samples", StaticFiles(directory=Path(__file__).parent / "static" / "samples"), name="samples")
 
 _secrets = CatalystEnvSecretProvider()
 
