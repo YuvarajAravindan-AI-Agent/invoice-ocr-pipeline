@@ -13,7 +13,11 @@ this same OcrExtractor port — that's the whole point of the port.
 
 Grounded SDK call:
     zia.extract_optical_characters(file, {'language': 'eng', 'modelType': 'OCR'})
-    -> {'confidence': <int>, 'text': <str>}
+    -> {'confidence': <int>, 'text': <str>}                 (image input)
+    -> {'text': <str>}                                      (PDF input,
+       confirmed against a live response — no 'confidence' key at all
+       when the PDF has a real text layer; this is direct text
+       extraction, not visual OCR)
 Source: https://docs.catalyst.zoho.com/en/sdk/python/v1/zia/ocr/
 
 NOTE: `app.zia()` as the accessor is inferred from the same pattern as
@@ -84,7 +88,14 @@ class CatalystZiaOcrExtractor:
             {"language": "eng", "model_type": "OCR"},
         )
         text = response["text"]
-        confidence = response["confidence"] / 100.0  # Zia returns 0-100, our port uses 0-1
+        # For a PDF with a real text layer, Zia's response has only
+        # 'text' — no 'confidence' key at all. Confirmed against a live
+        # response: {'text': '<the exact, correctly extracted invoice
+        # text>'} — this is direct text-layer extraction, not visual
+        # OCR, so 1.0 is an honest value here, not a guess papering over
+        # a missing field. Images still return {'confidence': <0-100>,
+        # 'text': <str>} per the module docstring's grounded SDK call.
+        confidence = response.get("confidence", 100) / 100.0
 
         fields = parse_invoice_text(text)
 
