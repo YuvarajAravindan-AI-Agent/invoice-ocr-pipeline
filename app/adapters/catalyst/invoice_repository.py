@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -81,15 +82,38 @@ def _decimal_or_none(value) -> Decimal | None:
     return Decimal(str(value)) if value not in (None, "") else None
 
 
+_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _format_datetime(dt) -> str:
+    # Data Store's DateTime columns expect "YYYY-MM-DD HH:MM:SS" — not
+    # datetime.isoformat()'s "T" separator or microseconds. Confirmed
+    # against a live CatalystAPIError (INVALID_INPUT, "Invalid input
+    # value for column name") before this fix.
+    return dt.strftime(_DATETIME_FORMAT)
+
+
+def _parse_datetime(value: str | None):
+    # get_row()/execute_query() hand back DateTime columns as this same
+    # "YYYY-MM-DD HH:MM:SS" string, not a datetime object — parse it back
+    # so a round-tripped Invoice (get() then update(), as
+    # ProcessExtractionJobUseCase does at the PROCESSING step) has a real
+    # datetime for _format_datetime() to call .strftime() on, not a
+    # string. Without this, update() on an Invoice that came from get()
+    # crashes the same way the pre-strftime-fix code did directly against
+    # a live worker ('str' object has no attribute 'isoformat').
+    return datetime.strptime(value, _DATETIME_FORMAT) if value else None
+
+
 def _row_to_invoice(row: dict) -> Invoice:
     return Invoice(
         id=UUID(row["invoice_id"]),
         status=InvoiceStatus(row["status"]),
         source_file_key=row["source_file_key"],
-        uploaded_at=row["uploaded_at"],
+        uploaded_at=_parse_datetime(row["uploaded_at"]),
         vendor_name=row.get("vendor_name") or None,
         invoice_number=row.get("invoice_number") or None,
-        invoice_date=row.get("invoice_date") or None,
+        invoice_date=_parse_datetime(row.get("invoice_date")),
         currency=row.get("currency") or None,
         subtotal=_decimal_or_none(row.get("subtotal")),
         tax=_decimal_or_none(row.get("tax")),
@@ -108,7 +132,11 @@ class CatalystDataStoreInvoiceRepository:
         self._zcql = catalyst_app.zcql()
 
     def save(self, invoice: Invoice) -> None:
-        self._table.insert_row(self._row(invoice))
+        # Data Store's insert_row rejects explicit nulls for optional
+        # columns (same INVALID_INPUT error as the datetime format) —
+        # omit unset fields entirely rather than sending them as None.
+        row = {k: v for k, v in self._row(invoice).items() if v is not None}
+        self._table.insert_row(row)
 
     def get(self, invoice_id: UUID) -> Invoice | None:
         rowid = self._find_rowid(invoice_id)
@@ -121,7 +149,7 @@ class CatalystDataStoreInvoiceRepository:
         rowid = self._find_rowid(invoice.id)
         if rowid is None:
             raise LookupError(f"invoice {invoice.id} not found for update")
-        data = self._row(invoice)
+        data = {k: v for k, v in self._row(invoice).items() if v is not None}
         data["ROWID"] = rowid
         self._table.update_row(data)
 
@@ -144,17 +172,22 @@ class CatalystDataStoreInvoiceRepository:
             "invoice_id": str(invoice.id),
             "status": invoice.status.value,
             "source_file_key": invoice.source_file_key,
-            "uploaded_at": invoice.uploaded_at.isoformat(),
+            "uploaded_at": _format_datetime(invoice.uploaded_at),
             "vendor_name": invoice.vendor_name,
             "invoice_number": invoice.invoice_number,
-            "invoice_date": invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+            "invoice_date": _format_datetime(invoice.invoice_date) if invoice.invoice_date else None,
             "currency": invoice.currency,
             "subtotal": str(invoice.subtotal) if invoice.subtotal is not None else None,
             "tax": str(invoice.tax) if invoice.tax is not None else None,
             "total": str(invoice.total) if invoice.total is not None else None,
             "confidence_score": invoice.confidence_score,
-            "line_items": _line_items_to_json(invoice.line_items),
-            "validation_issues": json.dumps(invoice.validation_issues),
+            # Sent as None (and dropped by save()/update()'s None-filter)
+            # rather than "[]" when empty — unconfirmed whether Data
+            # Store's Text columns actually reject "[]", but there's no
+            # downside to omitting an empty value, and get()/_row_to_invoice
+            # already treats a missing column as an empty list.
+            "line_items": _line_items_to_json(invoice.line_items) if invoice.line_items else None,
+            "validation_issues": json.dumps(invoice.validation_issues) if invoice.validation_issues else None,
             "error_message": invoice.error_message,
             "review_reasoning": invoice.review_reasoning,
         }
