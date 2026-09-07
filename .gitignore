@@ -24,3 +24,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+
+# Claude Code local agents
+.claude/
