@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field, create_engine, Session, select
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from uuid import uuid4
 from datetime import datetime
 
@@ -20,7 +20,7 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
 
 @app.post("/invoices", status_code=201)
-async def create_invoice(request):
+async def create_invoice(request: Request):
     # Accept an optional invoice payload (used by HttpInvoiceRepository.save).
     data = {}
     try:
