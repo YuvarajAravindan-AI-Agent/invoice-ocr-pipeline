@@ -20,8 +20,24 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
 
 @app.post("/invoices", status_code=201)
-def create_invoice():
-    invoice = Invoice(id=str(uuid4()), status="PENDING", source_file_key="", uploaded_at=datetime.utcnow())
+async def create_invoice(request):
+    # Accept an optional invoice payload (used by HttpInvoiceRepository.save).
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    invoice_id = data.get("id") or str(uuid4())
+    status = data.get("status", "pending")
+    source_file_key = data.get("source_file_key", "")
+    uploaded_at = data.get("uploaded_at")
+    if uploaded_at:
+        uploaded_at = datetime.fromisoformat(uploaded_at)
+    else:
+        uploaded_at = datetime.utcnow()
+
+    invoice = Invoice(id=invoice_id, status=status, source_file_key=source_file_key, uploaded_at=uploaded_at)
     with Session(engine) as sess:
         sess.add(invoice)
         sess.commit()
