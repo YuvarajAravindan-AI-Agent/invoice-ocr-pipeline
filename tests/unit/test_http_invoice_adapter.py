@@ -101,5 +101,5 @@ def test_update_calls_patch(monkeypatch):
     invoice = Invoice(id=uuid4(), status=InvoiceStatus.PROCESSING, source_file_key='', uploaded_at=datetime.utcnow())
     repo = HttpInvoiceRepository(base_url='http://example')
     repo.update(invoice)
-    assert calls['url'] == f'http://example/{invoice.id}'
+    assert calls['url'] == f'http://example/invoices/{invoice.id}'
     assert calls['json']['status'] == invoice.status.value
