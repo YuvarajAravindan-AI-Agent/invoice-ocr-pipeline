@@ -22,8 +22,8 @@ services:
 
   invoice-repo:
     build:
-      context: .
-      dockerfile: services/invoice-repo/Dockerfile
+      context: ./services/invoice-repo
+      dockerfile: Dockerfile
     image: invoice-repo:local
     ports:
       - "8000:8000"
