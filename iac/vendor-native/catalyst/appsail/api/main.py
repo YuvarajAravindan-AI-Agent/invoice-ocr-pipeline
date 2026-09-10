@@ -24,6 +24,7 @@ from app.adapters.catalyst.invoice_repository import CatalystDataStoreInvoiceRep
 from app.adapters.catalyst.job_queue import CatalystJobQueue
 from app.adapters.catalyst.object_store import CatalystStratusObjectStore
 from app.adapters.catalyst.secret_provider import CatalystEnvSecretProvider
+from app.adapters.http.invoice_repository import HttpInvoiceRepository
 from app.application.use_cases.get_invoice_status import GetInvoiceStatusUseCase
 from app.application.use_cases.submit_invoice import SubmitInvoiceCommand, SubmitInvoiceUseCase
 
@@ -50,13 +51,26 @@ def get_catalyst_app(request: Request):
 
 def get_submit_invoice(catalyst_app=Depends(get_catalyst_app)) -> SubmitInvoiceUseCase:
     object_store = CatalystStratusObjectStore(catalyst_app)
-    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
+    # Prefer an external HTTP-backed invoice repo when configured (useful for local compose/microservice)
+    invoice_repo_url = os.getenv('INVOICE_REPO_URL')
+    if invoice_repo_url:
+        invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+    else:
+        invoice_repo_url = os.getenv('INVOICE_REPO_URL')
+    if invoice_repo_url:
+        invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+    else:
+        invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     extraction_queue = CatalystJobQueue(catalyst_app)
     return SubmitInvoiceUseCase(object_store, invoice_repository, extraction_queue)
 
 
 def get_invoice_status_use_case(catalyst_app=Depends(get_catalyst_app)) -> GetInvoiceStatusUseCase:
-    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
+    invoice_repo_url = os.getenv('INVOICE_REPO_URL')
+    if invoice_repo_url:
+        invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+    else:
+        invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     return GetInvoiceStatusUseCase(invoice_repository)
 
 
