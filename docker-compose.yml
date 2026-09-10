@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: iac/vendor-native/catalyst/appsail/api/Dockerfile
+    image: invoice-ocr-pipeline-api:local
+    ports:
+      - "9000:9000"
+    environment:
+      - STRATUS_BUCKET=invoices
+      - WORKER_APPSAIL_ID=worker-local-id
+      - DATABASE_URL=
+  worker:
+    build:
+      context: .
+      dockerfile: iac/vendor-native/catalyst/appsail/worker/Dockerfile
+    image: invoice-ocr-pipeline-worker:local
+    environment:
+      - STRATUS_BUCKET=invoices
+      - DATABASE_URL=

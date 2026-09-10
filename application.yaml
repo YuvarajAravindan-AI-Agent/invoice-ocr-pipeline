@@ -1,0 +1,8 @@
+# Default application configuration. Override with local_application.yaml
+# or environment variables.
+stratus:
+  bucket: "invoices"
+worker:
+  appsail_id: ""
+database:
+  url: ""
