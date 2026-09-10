@@ -19,3 +19,11 @@ services:
     environment:
       - STRATUS_BUCKET=invoices
       - DATABASE_URL=
+
+  invoice-repo:
+    build:
+      context: .
+      dockerfile: services/invoice-repo/Dockerfile
+    image: invoice-repo:local
+    ports:
+      - "8000:8000"
