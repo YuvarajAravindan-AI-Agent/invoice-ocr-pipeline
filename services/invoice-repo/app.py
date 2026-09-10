@@ -23,7 +23,23 @@ class Invoice(SQLModel, table=True):
 
 @app.on_event("startup")
 def on_startup():
-    SQLModel.metadata.create_all(engine)
+    import time
+    from sqlalchemy.exc import OperationalError
+
+    # Wait for the database to be ready (useful for docker-compose start ordering)
+    last_exc = None
+    for _ in range(30):
+        try:
+            SQLModel.metadata.create_all(engine)
+            return
+        except OperationalError as e:
+            last_exc = e
+            time.sleep(1)
+    # If we couldn't connect after retries, raise the last exception so the
+    # container fails fast and logs the underlying error.
+    if last_exc:
+        raise last_exc
+
 
 @app.post("/invoices", status_code=201)
 async def create_invoice(request: Request):
