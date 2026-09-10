@@ -1,54 +1,80 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import asdict
+from typing import Optional
+
+import yaml
+from pydantic import BaseModel, Field, ValidationError
 
 
-try:
-    import yaml
-except Exception:  # pragma: no cover - YAML optional for tests
-    yaml = None
+class StratusConfig(BaseModel):
+    bucket: str = Field(..., min_length=1)
+
+
+class WorkerConfig(BaseModel):
+    appsail_id: Optional[str] = None
+
+
+class DatabaseConfig(BaseModel):
+    url: Optional[str] = None
+
+
+class Settings(BaseModel):
+    stratus: StratusConfig
+    worker: WorkerConfig = WorkerConfig()
+    database: DatabaseConfig = DatabaseConfig()
+
+
+_config: Optional[Settings] = None
 
 
 def _load_yaml(path: str) -> dict:
-    if not yaml or not os.path.exists(path):
+    if not os.path.exists(path):
         return {}
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
-@dataclass
-class Config:
-    STRATUS_BUCKET: str | None = None
-    WORKER_APPSAIL_ID: str | None = None
-    DATABASE_URL: str | None = None
-
-
-def load_config() -> Config:
-    # Layered load: application.yaml -> local_application.yaml -> env
+def load_config(env: Optional[str] = None) -> Settings:
+    """Load layered configuration:
+    - application.yaml
+    - application.{env}.yaml (if env provided or from APP_ENV)
+    - local_application.yaml
+    - environment variables override
+    Validates the merged config against the `Settings` schema.
+    """
     base = _load_yaml("application.yaml")
+    if env is None:
+        env = os.getenv("APP_ENV") or os.getenv("ENV") or "development"
+    env_file = f"application.{env}.yaml"
+    env_cfg = _load_yaml(env_file)
     local = _load_yaml("local_application.yaml")
 
-    merged = {**(base or {}), **(local or {})}
+    merged = {**(base or {}), **(env_cfg or {}), **(local or {})}
 
-    # flatten expected keys
-    bucket = merged.get("stratus", {}).get("bucket")
-    worker_id = merged.get("worker", {}).get("appsail_id")
-    db_url = merged.get("database", {}).get("url")
+    # Apply environment overrides
+    if os.getenv("STRATUS_BUCKET"):
+        merged.setdefault("stratus", {})["bucket"] = os.getenv("STRATUS_BUCKET")
+    if os.getenv("WORKER_APPSAIL_ID"):
+        merged.setdefault("worker", {})["appsail_id"] = os.getenv("WORKER_APPSAIL_ID")
+    if os.getenv("DATABASE_URL"):
+        merged.setdefault("database", {})["url"] = os.getenv("DATABASE_URL")
 
-    # override from env if present
-    bucket = os.getenv("STRATUS_BUCKET", bucket)
-    worker_id = os.getenv("WORKER_APPSAIL_ID", worker_id)
-    db_url = os.getenv("DATABASE_URL", db_url)
+    try:
+        settings = Settings(**merged)
+    except ValidationError as exc:
+        raise RuntimeError(f"Invalid configuration: {exc}") from exc
 
-    return Config(STRATUS_BUCKET=bucket, WORKER_APPSAIL_ID=worker_id, DATABASE_URL=db_url)
-
-
-_config: Config | None = None
+    return settings
 
 
-def get_config() -> Config:
+def get_config() -> Settings:
     global _config
     if _config is None:
         _config = load_config()
     return _config
+
+
+def as_dict() -> dict:
+    return asdict(get_config().dict())
