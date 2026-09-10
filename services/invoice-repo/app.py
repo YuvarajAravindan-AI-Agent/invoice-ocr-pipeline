@@ -2,10 +2,16 @@ from sqlmodel import SQLModel, Field, create_engine, Session, select
 from fastapi import FastAPI, HTTPException, Request
 from uuid import uuid4
 from datetime import datetime
+import os
 
 app = FastAPI(title="invoice-repo")
 
-engine = create_engine("sqlite:///./invoices.db", echo=False, connect_args={"check_same_thread": False})
+# Use DATABASE_URL env var when provided (Postgres), otherwise fallback to local SQLite
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL, echo=False)
+else:
+    engine = create_engine("sqlite:///./invoices.db", echo=False, connect_args={"check_same_thread": False})
 
 class Invoice(SQLModel, table=True):
     id: str = Field(primary_key=True)
