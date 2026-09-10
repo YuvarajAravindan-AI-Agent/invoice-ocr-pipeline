@@ -26,19 +26,34 @@ def on_startup():
     import time
     from sqlalchemy.exc import OperationalError
 
-    # Wait for the database to be ready (useful for docker-compose start ordering)
-    last_exc = None
-    for _ in range(30):
-        try:
-            SQLModel.metadata.create_all(engine)
-            return
-        except OperationalError as e:
-            last_exc = e
-            time.sleep(1)
-    # If we couldn't connect after retries, raise the last exception so the
-    # container fails fast and logs the underlying error.
-    if last_exc:
-        raise last_exc
+    # If DATABASE_URL is set we expect Alembic to manage migrations; only
+    # call create_all for the SQLite fallback (local dev/test).
+    if DATABASE_URL:
+        # Wait for the database to be reachable before startup procedures.
+        last_exc = None
+        for _ in range(30):
+            try:
+                # simple connection check
+                with engine.connect():
+                    return
+            except OperationalError as e:
+                last_exc = e
+                time.sleep(1)
+        if last_exc:
+            raise last_exc
+
+    else:
+        # Use create_all for SQLite fallback
+        last_exc = None
+        for _ in range(5):
+            try:
+                SQLModel.metadata.create_all(engine)
+                return
+            except OperationalError as e:
+                last_exc = e
+                time.sleep(1)
+        if last_exc:
+            raise last_exc
 
 
 @app.post("/invoices", status_code=201)
