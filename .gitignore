@@ -1,29 +1,5 @@
-# OpenTofu
-.terraform/
-*.tfstate
-*.tfstate.*
-tfplan
-crash.log
-crash.*.log
-*.tfvars
-!example.tfvars
-
-# Catalyst
-.catalyst/
-.catalystrc
-catalyst-config.local.json
-
-# General
-.env
-.env.*
-*.log
-.DS_Store
-
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
+# existing ignores
+.vscode/
 .venv/
-
-# Claude Code local agents
-.claude/
+__pycache__/
+local_application.yaml
