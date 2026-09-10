@@ -56,9 +56,12 @@ def get_submit_invoice(catalyst_app=Depends(get_catalyst_app)) -> SubmitInvoiceU
     if invoice_repo_url:
         invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
     else:
-        invoice_repo_url = os.getenv('INVOICE_REPO_URL')
-    if invoice_repo_url:
+        use_http = os.getenv('USE_HTTP_INVOICE_REPO', 'false').lower() in ('1','true','yes')
+    invoice_repo_url = os.getenv('INVOICE_REPO_URL')
+    if use_http and invoice_repo_url:
         invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+    elif use_http and not invoice_repo_url:
+        invoice_repository = HttpInvoiceRepository()
     else:
         invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     extraction_queue = CatalystJobQueue(catalyst_app)
@@ -66,9 +69,12 @@ def get_submit_invoice(catalyst_app=Depends(get_catalyst_app)) -> SubmitInvoiceU
 
 
 def get_invoice_status_use_case(catalyst_app=Depends(get_catalyst_app)) -> GetInvoiceStatusUseCase:
+    use_http = os.getenv('USE_HTTP_INVOICE_REPO', 'false').lower() in ('1','true','yes')
     invoice_repo_url = os.getenv('INVOICE_REPO_URL')
-    if invoice_repo_url:
+    if use_http and invoice_repo_url:
         invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+    elif use_http and not invoice_repo_url:
+        invoice_repository = HttpInvoiceRepository()
     else:
         invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     return GetInvoiceStatusUseCase(invoice_repository)

@@ -46,9 +46,12 @@ def get_catalyst_app(request: Request):
 
 def get_process_job(catalyst_app=Depends(get_catalyst_app)) -> ProcessExtractionJobUseCase:
     object_store = CatalystStratusObjectStore(catalyst_app)
+    use_http = os.getenv('USE_HTTP_INVOICE_REPO', 'false').lower() in ('1','true','yes')
     invoice_repo_url = os.getenv('INVOICE_REPO_URL')
-    if invoice_repo_url:
+    if use_http and invoice_repo_url:
         invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+    elif use_http and not invoice_repo_url:
+        invoice_repository = HttpInvoiceRepository()
     else:
         invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     extraction_queue = CatalystJobQueue(catalyst_app)
