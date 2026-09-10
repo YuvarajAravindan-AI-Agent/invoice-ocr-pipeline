@@ -1,19 +1,19 @@
 #!/bin/sh
 set -e
 
-# If DATABASE_URL points to Postgres, wait until it's reachable
+# If DATABASE_URL points to a DB, wait until it's reachable
 if [ "${DATABASE_URL:-}" ]; then
   echo "DATABASE_URL present, waiting for DB..."
   python - <<'PYCODE'
 import os, time
-import psycopg2
+from sqlalchemy import create_engine
 url = os.getenv('DATABASE_URL')
 for i in range(30):
     try:
-        conn = psycopg2.connect(url)
-        conn.close()
-        print('DB reachable')
-        break
+        engine = create_engine(url)
+        with engine.connect() as conn:
+            print('DB reachable')
+            break
     except Exception as e:
         print('DB not ready, retrying...', e)
         time.sleep(1)
