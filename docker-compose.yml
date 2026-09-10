@@ -1,0 +1,49 @@
+version: '3.8'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: iac/vendor-native/catalyst/appsail/api/Dockerfile
+    image: invoice-ocr-pipeline-api:local
+    ports:
+      - "9000:9000"
+    environment:
+      - STRATUS_BUCKET=invoices
+      - WORKER_APPSAIL_ID=worker-local-id
+      - DATABASE_URL=
+      - INVOICE_REPO_URL=http://invoice-repo:8000
+      - USE_HTTP_INVOICE_REPO=true
+  worker:
+    build:
+      context: .
+      dockerfile: iac/vendor-native/catalyst/appsail/worker/Dockerfile
+    image: invoice-ocr-pipeline-worker:local
+    environment:
+      - STRATUS_BUCKET=invoices
+      - DATABASE_URL=
+      - INVOICE_REPO_URL=http://invoice-repo:8000
+      - USE_HTTP_INVOICE_REPO=true
+
+  invoice-repo:
+    build:
+      context: ./services/invoice-repo
+      dockerfile: Dockerfile
+    image: invoice-repo:local
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:password@postgres:5432/invoices
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=invoices
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

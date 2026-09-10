@@ -24,6 +24,9 @@ from app.adapters.catalyst.invoice_repository import CatalystDataStoreInvoiceRep
 from app.adapters.catalyst.job_queue import CatalystJobQueue
 from app.adapters.catalyst.object_store import CatalystStratusObjectStore
 from app.adapters.catalyst.secret_provider import CatalystEnvSecretProvider
+from app.adapters.http.invoice_repository import HttpInvoiceRepository
+from app.adapters.local.object_store import LocalObjectStore
+from app.adapters.local.extraction_queue import NoopExtractionQueue
 from app.application.use_cases.get_invoice_status import GetInvoiceStatusUseCase
 from app.application.use_cases.submit_invoice import SubmitInvoiceCommand, SubmitInvoiceUseCase
 
@@ -48,16 +51,36 @@ def get_catalyst_app(request: Request):
     return zcatalyst_sdk.initialize(req=request)
 
 
-def get_submit_invoice(catalyst_app=Depends(get_catalyst_app)) -> SubmitInvoiceUseCase:
-    object_store = CatalystStratusObjectStore(catalyst_app)
-    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
-    extraction_queue = CatalystJobQueue(catalyst_app)
+def get_submit_invoice(request: Request) -> SubmitInvoiceUseCase:
+    use_http = os.getenv('USE_HTTP_INVOICE_REPO', 'false').lower() in ('1','true','yes')
+    invoice_repo_url = os.getenv('INVOICE_REPO_URL')
+    if use_http:
+        object_store = LocalObjectStore()
+        if invoice_repo_url:
+            invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+        else:
+            invoice_repository = HttpInvoiceRepository()
+        extraction_queue = NoopExtractionQueue()
+    else:
+        catalyst_app = get_catalyst_app(request)
+        object_store = CatalystStratusObjectStore(catalyst_app)
+        invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
+        extraction_queue = CatalystJobQueue(catalyst_app)
     return SubmitInvoiceUseCase(object_store, invoice_repository, extraction_queue)
 
-
-def get_invoice_status_use_case(catalyst_app=Depends(get_catalyst_app)) -> GetInvoiceStatusUseCase:
-    invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
+def get_invoice_status_use_case(request: Request) -> GetInvoiceStatusUseCase:
+    use_http = os.getenv('USE_HTTP_INVOICE_REPO', 'false').lower() in ('1','true','yes')
+    invoice_repo_url = os.getenv('INVOICE_REPO_URL')
+    if use_http:
+        if invoice_repo_url:
+            invoice_repository = HttpInvoiceRepository(base_url=invoice_repo_url)
+        else:
+            invoice_repository = HttpInvoiceRepository()
+    else:
+        catalyst_app = get_catalyst_app(request)
+        invoice_repository = CatalystDataStoreInvoiceRepository(catalyst_app)
     return GetInvoiceStatusUseCase(invoice_repository)
+
 
 
 @app.get("/health")
