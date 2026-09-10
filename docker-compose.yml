@@ -12,6 +12,7 @@ services:
       - WORKER_APPSAIL_ID=worker-local-id
       - DATABASE_URL=
       - INVOICE_REPO_URL=http://invoice-repo:8000
+      - USE_HTTP_INVOICE_REPO=true
   worker:
     build:
       context: .
@@ -21,6 +22,7 @@ services:
       - STRATUS_BUCKET=invoices
       - DATABASE_URL=
       - INVOICE_REPO_URL=http://invoice-repo:8000
+      - USE_HTTP_INVOICE_REPO=true
 
   invoice-repo:
     build:
